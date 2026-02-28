@@ -100,6 +100,64 @@ Parameters:
 - center_lat: <float>
 - center_lng: <float>
 - scale_meters_per_pixel: <float>
+- roof_points: <json> (optional - user-placed points for SAM prompts)
+```
+
+### Place Panels
+```bash
+POST http://localhost:8889/place_panels
+Content-Type: application/json
+
+Request Body:
+{
+  "usable_polygon": [[x1,y1], [x2,y2], ...],  // Polygon from analyze_roof
+  "panel_spec": {
+    "width_mm": 1000,            // Panel width in millimeters
+    "height_mm": 2000,           // Panel height in millimeters
+    "rated_power_w": 400         // Panel rated power in watts
+  },
+  "target_panel_count": 15,      // Number of panels to place
+  "tilt_degrees": 20,            // Panel tilt angle
+  "azimuth_degrees": 180,        // Panel azimuth (0=North, 180=South)
+  "scale_meters_per_pixel": 0.3, // Scale from analyze_roof
+  "image_width": 640,            // Image width in pixels
+  "image_height": 480,           // Image height in pixels
+  "center_lat": 31.6295,         // Center latitude
+  "center_lng": -7.9811,         // Center longitude
+  "min_edge_margin_m": 0.3,      // Margin from polygon edges
+  "row_spacing_mode": "auto",    // "auto", "tight", or "shade-free"
+  "orientation": "portrait"      // "portrait" or "landscape"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "panels_placed": 12,
+  "target_panel_count": 15,
+  "panel_positions": [
+    {
+      "id": 1,
+      "center_x": 120.5,
+      "center_y": 80.3,
+      "corners": [[100,60], [140,60], [140,100], [100,100]],
+      "geo_center": [-7.9812, 31.6296],
+      "geo_corners": [...],
+      "row": 0,
+      "column": 0
+    }
+  ],
+  "coverage_percentage": 65.2,
+  "total_panel_area_m2": 24.0,
+  "usable_area_m2": 36.8,
+  "row_count": 3,
+  "panels_per_row": [4, 4, 4],
+  "row_spacing_m": 0.45,
+  "panel_footprint_m2": 2.0,
+  "message": "Placed 12 of 15 panels (limited by usable area)",
+  "warnings": ["Could only fit 12 panels in available area"]
+}
 ```
 
 ## ⚠️ Fallback Mode

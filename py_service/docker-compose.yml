@@ -16,6 +16,7 @@ services:
     volumes:
       # Mount for development (hot reload)
       - ./api_service.py:/app/api_service.py:ro
+      - ./panel_placement_service.py:/app/panel_placement_service.py:ro
       # Optional: Mount model from host to avoid re-downloading
       # - ./sam_vit_h_4b8939.pth:/app/sam_vit_h_4b8939.pth:ro
     deploy:
