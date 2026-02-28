@@ -62,7 +62,7 @@ POST /analyze_roof
     "center_lat": 33.5731,
     "center_lng": -7.5898,
     "scale_meters_per_pixel": 0.1,
-    "enhancement_mode": "basic"
+    "enhancement_mode": "basic" 
 }
 
 # Advanced enhancement (default)

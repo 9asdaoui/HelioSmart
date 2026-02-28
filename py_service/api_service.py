@@ -24,6 +24,13 @@ app = FastAPI(title="Roof Segmentation API", description="API for detecting usab
 sam_model = None
 predictor = None
 mask_generator = None
+model_loaded = False
+model_error = None
+
+# Model configuration
+SAM_CHECKPOINT = "sam_vit_h_4b8939.pth"
+MODEL_TYPE = "vit_h"
+MODEL_DOWNLOAD_URL = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth"
 
 class RoofAnalysisRequest(BaseModel):
     center_lat: float
@@ -54,34 +61,121 @@ class RoofAnalysisResponse(BaseModel):
     summary: Dict[str, float]
 
 def load_sam_model():
-    """Load SAM model once at startup"""
-    global sam_model, predictor, mask_generator
+    """
+    Load SAM model once at startup with comprehensive error handling
     
-    sam_checkpoint = "sam_vit_h_4b8939.pth"
-    model_type = "vit_h"
+    Returns:
+        bool: True if model loaded successfully, False otherwise
+    """
+    global sam_model, predictor, mask_generator, model_loaded, model_error
     
-    # Use CUDA if available, otherwise fallback to CPU
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    # Initialize SAM model
-    sam_model = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-    sam_model.to(device=device)
-    
-    # Initialize predictor
-    predictor = SamPredictor(sam_model)
-    
-    # Initialize mask generator
-    mask_generator = SamAutomaticMaskGenerator(
-        model=sam_model,
-        points_per_side=32,
-        pred_iou_thresh=0.86,
-        stability_score_thresh=0.92,
-        crop_n_layers=1,
-        crop_n_points_downscale_factor=2,
-        min_mask_region_area=100
-    )
-    
-    print("SAM model loaded successfully!")
+    try:
+        # Check if model file exists
+        if not os.path.exists(SAM_CHECKPOINT):
+            error_msg = (
+                f"❌ SAM model file not found: {SAM_CHECKPOINT}\n"
+                f"\n📥 To download the model:\n"
+                f"1. Download from: {MODEL_DOWNLOAD_URL}\n"
+                f"2. Place it in: {os.path.abspath('.')}\n"
+                f"3. Or run: wget {MODEL_DOWNLOAD_URL}\n"
+                f"\n⚠️  Service will run in FALLBACK mode (placeholder data only)"
+            )
+            print(error_msg)
+            model_error = "Model file not found"
+            model_loaded = False
+            return False
+        
+        print(f"📦 Loading SAM model from {SAM_CHECKPOINT}...")
+        
+        # Check file size (SAM ViT-H should be ~2.4GB)
+        file_size = os.path.getsize(SAM_CHECKPOINT) / (1024**3)  # GB
+        print(f"📊 Model file size: {file_size:.2f} GB")
+        
+        if file_size < 2.0:
+            error_msg = (
+                f"⚠️  Model file seems too small ({file_size:.2f} GB). Expected ~2.4 GB.\n"
+                f"File may be corrupted or incomplete. Please re-download from:\n"
+                f"{MODEL_DOWNLOAD_URL}"
+            )
+            print(error_msg)
+            model_error = "Model file corrupted or incomplete"
+            model_loaded = False
+            return False
+        
+        # Use CUDA if available, otherwise fallback to CPU
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"🖥️  Using device: {device.upper()}")
+        
+        if device == "cuda":
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            print(f"🎮 GPU: {gpu_name} ({gpu_memory:.1f} GB)")
+            
+            if gpu_memory < 6:
+                print(f"⚠️  Warning: GPU has only {gpu_memory:.1f} GB memory. SAM ViT-H requires ~6GB.")
+                print(f"💡 Consider using ViT-B model for lower memory usage.")
+        
+        # Initialize SAM model
+        print(f"🔧 Initializing SAM {MODEL_TYPE.upper()} model...")
+        sam_model = sam_model_registry[MODEL_TYPE](checkpoint=SAM_CHECKPOINT)
+        sam_model.to(device=device)
+        
+        # Initialize predictor
+        print("🔧 Initializing SAM predictor...")
+        predictor = SamPredictor(sam_model)
+        
+        # Initialize mask generator
+        print("🔧 Initializing automatic mask generator...")
+        mask_generator = SamAutomaticMaskGenerator(
+            model=sam_model,
+            points_per_side=32,
+            pred_iou_thresh=0.86,
+            stability_score_thresh=0.92,
+            crop_n_layers=1,
+            crop_n_points_downscale_factor=2,
+            min_mask_region_area=100
+        )
+        
+        model_loaded = True
+        model_error = None
+        print("✅ SAM model loaded successfully!")
+        print("🚀 Service ready for roof segmentation.")
+        return True
+        
+    except KeyError as e:
+        error_msg = (
+            f"❌ Invalid model type '{MODEL_TYPE}'. Available types: {list(sam_model_registry.keys())}\n"
+            f"Error: {str(e)}"
+        )
+        print(error_msg)
+        model_error = f"Invalid model type: {str(e)}"
+        model_loaded = False
+        return False
+        
+    except RuntimeError as e:
+        error_msg = (
+            f"❌ Runtime error loading model:\n{str(e)}\n\n"
+            f"💡 Possible solutions:\n"
+            f"1. Check if you have enough GPU/RAM memory\n"
+            f"2. Try using CPU by setting CUDA_VISIBLE_DEVICES=''\n"
+            f"3. Download a smaller model (ViT-B instead of ViT-H)\n"
+            f"\n⚠️  Service will run in FALLBACK mode (placeholder data only)"
+        )
+        print(error_msg)
+        model_error = f"Runtime error: {str(e)}"
+        model_loaded = False
+        return False
+        
+    except Exception as e:
+        error_msg = (
+            f"❌ Unexpected error loading SAM model:\n{str(e)}\n"
+            f"Type: {type(e).__name__}\n"
+            f"\n⚠️  Service will run in FALLBACK mode (placeholder data only)"
+        )
+        print(error_msg)
+        model_error = f"Unexpected error: {str(e)}"
+        model_loaded = False
+        return False
 
 def mask_to_polygon(mask):
     """Convert a binary mask to polygon coordinates"""
@@ -151,12 +245,76 @@ def show_anns(anns):
     
     return colors, sorted_anns
 
+def get_fallback_response(image_array, center_lat, center_lng, scale_meters_per_pixel):
+    """
+    Generate fallback/placeholder response when SAM model is not available
+    
+    Returns simple rectangular roof area approximation
+    """
+    h, w = image_array.shape[:2]
+    
+    # Create a simple rectangular polygon (80% of image)
+    margin = 0.1
+    polygon = [
+        [int(w * margin), int(h * margin)],
+        [int(w * (1 - margin)), int(h * margin)],
+        [int(w * (1 - margin)), int(h * (1 - margin))],
+        [int(w * margin), int(h * (1 - margin))],
+        [int(w * margin), int(h * margin)]
+    ]
+    
+    area_pixels = w * h * 0.64  # 80% x 80% = 64%
+    area_m2 = area_pixels * (scale_meters_per_pixel ** 2)
+    
+    geo_coords = pixel_to_geo_coordinates(polygon, center_lat, center_lng, scale_meters_per_pixel, w, h)
+    
+    return {
+        "image_info": {
+            "dimensions": {"width": w, "height": h}
+        },
+        "georeferencing": {
+            "center_lat": center_lat,
+            "center_lng": center_lng,
+            "scale_meters_per_pixel": scale_meters_per_pixel
+        },
+        "usable_roof_area": [
+            {
+                "id": "roof_area_1_fallback",
+                "polygon": polygon,
+                "area_pixels": area_pixels,
+                "area_m2": area_m2,
+                "coordinates": geo_coords
+            }
+        ],
+        "obstacles": [],
+        "total_usable_area_pixels": area_pixels,
+        "total_usable_area_m2": area_m2,
+        "total_obstacle_area_pixels": 0,
+        "total_obstacle_area_m2": 0,
+        "summary": {
+            "total_roof_segments": 1,
+            "total_obstacles": 0,
+            "usable_area_percentage": 100.0,
+            "obstacle_area_percentage": 0.0,
+            "total_area_m2": area_m2
+        },
+        "_fallback": True,
+        "_fallback_reason": model_error or "SAM model not loaded"
+    }
+
 def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per_pixel):
     """
     Process image following the exact workflow from segment.ipynb
     Returns processed data for JSON response
+    
+    Falls back to placeholder response if SAM model is not loaded
     """
-    global predictor, mask_generator
+    global predictor, mask_generator, model_loaded
+    
+    # Check if model is loaded
+    if not model_loaded or predictor is None or mask_generator is None:
+        print("⚠️  SAM model not available, using fallback response")
+        return get_fallback_response(image_array, center_lat, center_lng, scale_meters_per_pixel)
     
     # Step 1: Convert image to RGB
     if len(image_array.shape) == 3 and image_array.shape[2] == 3:
@@ -315,8 +473,23 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
 
 @app.on_event("startup")
 async def startup_event():
-    """Load SAM model on startup"""
-    load_sam_model()
+    """
+    Load SAM model on startup
+    Continues even if model fails to load (fallback mode)
+    """
+    print("\n" + "="*60)
+    print("🚀 Starting Roof Segmentation API")
+    print("="*60)
+    
+    success = load_sam_model()
+    
+    if success:
+        print("\n✅ Service started successfully with SAM model")
+    else:
+        print("\n⚠️  Service started in FALLBACK mode")
+        print("📝 API will return placeholder data until model is loaded")
+    
+    print("="*60 + "\n")
 
 @app.post("/analyze_roof", response_model=RoofAnalysisResponse)
 async def analyze_roof(
@@ -366,15 +539,86 @@ async def analyze_roof(
         # Process image using the same workflow as notebook
         result = process_image_workflow(image_array, center_lat, center_lng, scale_meters_per_pixel)
         
+        # Add warning if using fallback mode
+        if not model_loaded:
+            print(f"⚠️  Request processed in FALLBACK mode (placeholder data returned)")
+            result["_warning"] = "SAM model not loaded - using placeholder data. See /model/info for troubleshooting."
+        
         return JSONResponse(content=result)
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+        error_detail = f"Error processing image: {str(e)}"
+        print(f"❌ {error_detail}")
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "model_loaded": sam_model is not None}
+    """Health check endpoint with detailed model status"""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    health_data = {
+        "status": "healthy",
+        "model_loaded": model_loaded,
+        "model_error": model_error,
+        "device": device,
+        "mode": "production" if model_loaded else "fallback"
+    }
+    
+    if device == "cuda" and torch.cuda.is_available():
+        health_data["gpu_info"] = {
+            "name": torch.cuda.get_device_name(0),
+            "memory_gb": round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
+        }
+    
+    if model_loaded:
+        health_data["model_info"] = {
+            "checkpoint": SAM_CHECKPOINT,
+            "type": MODEL_TYPE,
+            "file_size_gb": round(os.path.getsize(SAM_CHECKPOINT) / (1024**3), 2)
+        }
+    else:
+        health_data["help"] = {
+            "download_url": MODEL_DOWNLOAD_URL,
+            "install_location": os.path.abspath(SAM_CHECKPOINT)
+        }
+    
+    return health_data
+
+@app.get("/model/info")
+async def model_info():
+    """Get detailed model information and troubleshooting"""
+    if model_loaded:
+        return {
+            "status": "loaded",
+            "checkpoint": SAM_CHECKPOINT,
+            "model_type": MODEL_TYPE,
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
+            "file_exists": os.path.exists(SAM_CHECKPOINT),
+            "file_size_gb": round(os.path.getsize(SAM_CHECKPOINT) / (1024**3), 2) if os.path.exists(SAM_CHECKPOINT) else None
+        }
+    else:
+        return {
+            "status": "not_loaded",
+            "error": model_error,
+            "checkpoint_path": os.path.abspath(SAM_CHECKPOINT),
+            "file_exists": os.path.exists(SAM_CHECKPOINT),
+            "download_instructions": {
+                "url": MODEL_DOWNLOAD_URL,
+                "commands": [
+                    f"wget {MODEL_DOWNLOAD_URL}",
+                    f"# Or use curl:",
+                    f"curl -L -o {SAM_CHECKPOINT} {MODEL_DOWNLOAD_URL}"
+                ],
+                "windows_powershell": f"Invoke-WebRequest -Uri {MODEL_DOWNLOAD_URL} -OutFile {SAM_CHECKPOINT}"
+            },
+            "alternative_models": {
+                "vit_b": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth (375MB)",
+                "vit_l": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth (1.2GB)"
+            }
+        }
 
 @app.get("/")
 async def root():
