@@ -25,8 +25,11 @@ class Settings(BaseSettings):
     OPENSOLAR_API_KEY: str = ""
     OPENSOLAR_ORG_ID: str = ""
     
+    # Google Maps API
+    GOOGLE_MAPS_API_KEY: str = "AIzaSyBWF4GwzK9NQfaHWgXzpyYzzOZUSsxt824"
+    
     # Python SAM Service (Roof Segmentation)
-    PY_SERVICE_URL: str = "http://localhost:8889"
+    PY_SERVICE_URL: str = "http://host.docker.internal:8889"
     
     @property
     def cors_origins_list(self) -> List[str]:

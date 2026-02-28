@@ -105,7 +105,7 @@ class UsableAreaDetectionService:
                     "scale_meters_per_pixel": options.get("meters_per_pixel", 0.3),
                 }
 
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=180.0) as client:  # 3 minutes for SAM processing
                     response = await client.post(endpoint_url, files=files, data=data)
                     response.raise_for_status()
                     sam_result = response.json()

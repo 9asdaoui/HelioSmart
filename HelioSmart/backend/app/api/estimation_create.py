@@ -7,6 +7,7 @@ import base64
 import os
 import json
 import math
+import httpx
 from typing import Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
@@ -137,8 +138,25 @@ async def create_project(
 
         # ========= 8. Process and save the roof image =========
         roof_image_path = None
-        if satellite_image:
+        
+        # Check if we have a valid satellite image (not placeholder)
+        placeholder_prefix = "data:image/png;base64,cGxhY2Vob2xkZXI"  # base64 of 'placeholder'
+        has_valid_image = satellite_image and not satellite_image.startswith(placeholder_prefix)
+        
+        if has_valid_image:
             roof_image_path = _save_roof_image(satellite_image, 1)  # User ID would come from auth
+        
+        # If no valid image, fetch from Google Static Maps API
+        if not roof_image_path and latitude and longitude:
+            logger.info(f"Fetching satellite image from Google Maps for {latitude}, {longitude}")
+            fetched_image = await _fetch_satellite_image(
+                latitude, longitude, 
+                zoom=zoom_level or 20,
+                size="640x640"
+            )
+            if fetched_image:
+                roof_image_path = _save_roof_image(fetched_image, 1)
+                logger.info(f"Saved fetched satellite image: {roof_image_path}")
 
         # ========= 9. Call usable area detection API =========
         usable_area_result = None
@@ -419,7 +437,11 @@ async def create_project(
             "stringing_details": json.dumps(stringing_details) if stringing_details else None,
         }
 
-        # Add usable area data if available
+        # Calculate estimated roof area from panel count (used when SAM is unavailable)
+        # Average panel is ~2m² and needs ~2.5m² with spacing
+        estimated_roof_area_m2 = panel_count * 2.5 if panel_count else 50.0  # Default 50m²
+        
+        # Add usable area data - always set usable_area_m2 for visualization
         if usable_area_result:
             estimation_data.update(
                 {
@@ -437,6 +459,11 @@ async def create_project(
                     "meters_per_pixel": usable_area_result.get("meters_per_pixel"),
                 }
             )
+        else:
+            # SAM unavailable - use estimated values
+            estimation_data.update({
+                "usable_area_m2": estimated_roof_area_m2,
+            })
 
         # Add panel placement data if available
         if panel_placement_result:
@@ -568,6 +595,45 @@ def _get_config_value(db: Session, key: str, default):
         except (ValueError, TypeError):
             return default
     return default
+
+
+async def _fetch_satellite_image(latitude: float, longitude: float, zoom: int = 20, size: str = "640x640") -> Optional[str]:
+    """
+    Fetch satellite image from Google Static Maps API
+    Returns base64 data URL or None if failed
+    """
+    from app.core.config import settings
+    
+    try:
+        api_key = settings.GOOGLE_MAPS_API_KEY
+        if not api_key:
+            logger.warning("Google Maps API key not configured")
+            return None
+        
+        # Google Static Maps API URL
+        url = f"https://maps.googleapis.com/maps/api/staticmap"
+        params = {
+            "center": f"{latitude},{longitude}",
+            "zoom": zoom,
+            "size": size,
+            "maptype": "satellite",
+            "key": api_key
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            
+            # Convert to base64 data URL
+            image_data = base64.b64encode(response.content).decode('utf-8')
+            data_url = f"data:image/png;base64,{image_data}"
+            
+            logger.info(f"Fetched satellite image for {latitude}, {longitude}")
+            return data_url
+            
+    except Exception as e:
+        logger.error(f"Error fetching satellite image: {str(e)}")
+        return None
 
 
 def _save_roof_image(data_url: str, user_id: int) -> Optional[str]:

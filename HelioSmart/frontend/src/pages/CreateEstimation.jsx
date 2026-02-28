@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { estimationsAPI, utilitiesAPI } from '@/services/api'
 import PolygonOverlay from '@/components/PolygonOverlay'
+import html2canvas from 'html2canvas'
 
 export default function CreateEstimation() {
   const navigate = useNavigate()
@@ -24,8 +25,11 @@ export default function CreateEstimation() {
   const [estimationId, setEstimationId] = useState(null)
   const [errors, setErrors] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
+  const [capturedRoofImage, setCapturedRoofImage] = useState(null)
+  const [isCapturing, setIsCapturing] = useState(false)
   
   const mapRef = useRef(null)
+  const captureBoxRef = useRef(null)
   const [map, setMap] = useState(null)
   const [geocoder, setGeocoder] = useState(null)
   const [mapCenter, setMapCenter] = useState({ lat: 31.6295, lng: -7.9811 })
@@ -50,9 +54,9 @@ export default function CreateEstimation() {
       
       // Check if visualization data is in response
       if (response.data.visualization) {
-        console.log('Step 7 ACTIVATED - visualization data found')
+        console.log('Step 8 ACTIVATED - visualization data found')
         setVisualizationData(response.data.visualization)
-        setCurrentStep(7) // Go to visualization step
+        setCurrentStep(8) // Go to AI detection results step
       } else {
         console.log('No visualization data - redirecting to details page')
         // No visualization data, go directly to details
@@ -114,16 +118,48 @@ export default function CreateEstimation() {
   }
   
   const captureCurrentLocation = async () => {
-    if (!map || !geocoder) {
+    if (!map || !geocoder || !mapRef.current) {
       setErrors({ ...errors, location: 'Map is not ready yet' })
       return
     }
     
+    setIsCapturing(true)
     const center = map.getCenter()
     const location = { lat: center.lat(), lng: center.lng() }
     
     try {
       setErrors({ ...errors, location: null })
+      
+      // 1. Capture the satellite image from the map
+      const mapElement = mapRef.current
+      const canvas = await html2canvas(mapElement, {
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        scale: 2, // Higher quality
+      })
+      
+      // 2. Calculate the capture box dimensions (40% width, 4:3 aspect ratio, centered)
+      const mapWidth = canvas.width
+      const mapHeight = canvas.height
+      const boxWidth = mapWidth * 0.4
+      const boxHeight = boxWidth * (3/4)
+      const boxX = (mapWidth - boxWidth) / 2
+      const boxY = (mapHeight - boxHeight) / 2
+      
+      // 3. Crop to the capture box area
+      const croppedCanvas = document.createElement('canvas')
+      croppedCanvas.width = boxWidth
+      croppedCanvas.height = boxHeight
+      const ctx = croppedCanvas.getContext('2d')
+      ctx.drawImage(canvas, boxX, boxY, boxWidth, boxHeight, 0, 0, boxWidth, boxHeight)
+      
+      // 4. Convert to base64
+      const imageBase64 = croppedCanvas.toDataURL('image/png')
+      setCapturedRoofImage(imageBase64)
+      console.log('Captured roof image:', imageBase64.substring(0, 100) + '...')
+      
+      // 5. Get address data via geocoding
       const response = await new Promise((resolve, reject) => {
         geocoder.geocode({ location }, (results, status) => {
           if (status === 'OK' && results[0]) resolve(results[0])
@@ -164,9 +200,11 @@ export default function CreateEstimation() {
       
       setSelectedLocation(addressData)
       setErrors({ ...errors, location: null })
+      setIsCapturing(false)
     } catch (error) {
-      console.error('Geocoding error:', error)
-      setErrors({ ...errors, location: 'Failed to capture location. Please try again.' })
+      console.error('Capture error:', error)
+      setErrors({ ...errors, location: 'Failed to capture roof image. Please try again.' })
+      setIsCapturing(false)
     }
   }
   
@@ -196,6 +234,9 @@ export default function CreateEstimation() {
       }
       if (!selectedLocation) {
         newErrors.location = 'Please capture a location first'
+      }
+      if (!capturedRoofImage) {
+        newErrors.location = 'Please capture your roof image by clicking the Capture Location button'
       }
     }
     
@@ -245,41 +286,14 @@ export default function CreateEstimation() {
       setErrors({ submit: 'Map is not ready' })
       return
     }
-    setErrors({})
     
-    // Capture satellite image from map
-    let satelliteImageBase64 = ''
-    try {
-      // Get the map div and convert to canvas
-      const mapDiv = mapRef.current
-      if (mapDiv) {
-        // Use html2canvas or similar library, or use Google Maps Static API
-        // For now, we'll use a placeholder approach
-        const canvas = document.createElement('canvas')
-        canvas.width = mapDiv.offsetWidth
-        canvas.height = mapDiv.offsetHeight
-        const ctx = canvas.getContext('2d')
-        
-        // Try to capture the map image
-        // Note: This is a simplified version. In production, use proper screenshot library
-        try {
-          // Get static map image from Google Maps Static API
-          const center = map.getCenter()
-          const zoom = map.getZoom()
-          const size = `${canvas.width}x${canvas.height}`
-          
-          // Since we can't easily screenshot Google Maps due to CORS,
-          // we'll use the Static Maps API or send coordinates for backend to fetch
-          // For now, create a data URL placeholder
-          satelliteImageBase64 = `data:image/png;base64,${btoa('placeholder')}`
-        } catch (err) {
-          console.warn('Could not capture map image:', err)
-          satelliteImageBase64 = `data:image/png;base64,${btoa('placeholder')}`
-        }
-      }
-    } catch (error) {
-      console.error('Error capturing satellite image:', error)
+    // Validate that we have a captured roof image
+    if (!capturedRoofImage) {
+      setErrors({ submit: 'Please capture your roof location first (Step 1)' })
+      return
     }
+    
+    setErrors({})
     
     const formData = {
       // Customer info
@@ -296,8 +310,8 @@ export default function CreateEstimation() {
       country: selectedLocation?.country || '',
       search_query: selectedLocation?.address || '',
       
-      // Satellite image
-      satellite_image: satelliteImageBase64,
+      // Satellite image from capture
+      satellite_image: capturedRoofImage,
       scale_meters_per_pixel: 0.3, // Approximate scale
       zoom_level: map?.getZoom() || 18,
       
@@ -354,10 +368,10 @@ export default function CreateEstimation() {
         </div>
         
         <div className="flex justify-between items-center mb-8 px-2">
-          {[1, 2, 3, 4, 5, 6].map((step) => (
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((step) => (
             <div key={step} className="flex items-center flex-1">
               <div className="flex flex-col items-center">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg transition-all ${
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
                   currentStep >= step
                     ? currentStep === step ? 'bg-blue-600 text-white' : 'bg-green-500 text-white'
                     : 'bg-gray-200 text-gray-500'
@@ -369,11 +383,13 @@ export default function CreateEstimation() {
                   {step === 2 && 'Energy'}
                   {step === 3 && 'Provider'}
                   {step === 4 && 'Property'}
-                  {step === 5 && 'Solar Points'}
+                  {step === 5 && 'Points'}
                   {step === 6 && 'Review'}
+                  {step === 7 && 'Processing'}
+                  {step === 8 && 'Results'}
                 </span>
               </div>
-              {step < 6 && (
+              {step < 8 && (
                 <div className="flex-1 h-1 mx-2" style={{ backgroundColor: currentStep > step ? '#22c55e' : '#e5e7eb' }} />
               )}
             </div>
@@ -434,15 +450,15 @@ export default function CreateEstimation() {
                   📍 Center your roof in the box, then click Capture
                 </div>
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className="relative" style={{ width: '60%', aspectRatio: '4/3' }}>
+                  <div className="relative" style={{ width: '40%', aspectRatio: '4/3' }}>
                     <div className="absolute inset-0 border-3 border-dashed border-yellow-400 rounded-lg" style={{ borderWidth: '3px', boxShadow: '0 0 0 3px rgba(250, 204, 21, 0.4), inset 0 0 20px rgba(0,0,0,0.1)' }}>
                       <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-gray-900 text-xs px-3 py-1 rounded font-bold whitespace-nowrap shadow">⬇ Fit roof here ⬇</div>
                     </div>
                   </div>
                 </div>
               </div>
-              <button type="button" onClick={captureCurrentLocation} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
-                📸 Capture Location
+              <button type="button" onClick={captureCurrentLocation} disabled={isCapturing} className={`w-full font-semibold py-3 px-6 rounded-lg transition-colors ${isCapturing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} text-white`}>
+                {isCapturing ? '⏳ Capturing...' : '📸 Capture Location'}
               </button>
               
               {errors.location && (
@@ -629,15 +645,25 @@ export default function CreateEstimation() {
                 <div className="absolute -top-2 left-0 right-0 text-center">
                   <span className="bg-indigo-600 text-white text-xs px-3 py-1 rounded-full font-semibold shadow-lg">↓ Your Captured Roof Image ↓</span>
                 </div>
-                <div onClick={addSolarPoint} className="relative border-4 border-indigo-500 rounded-lg overflow-hidden cursor-crosshair shadow-xl" style={{ aspectRatio: '4/3', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'800\' height=\'600\' viewBox=\'0 0 800 600\'%3E%3Crect width=\'800\' height=\'600\' fill=\'%23b0bec5\'/%3E%3Cpath d=\'M100 100h600v400H100z\' fill=\'%23455a64\' fill-opacity=\'.3\'/%3E%3Cpath d=\'M150 150h500v300H150z\' fill=\'%23455a64\' fill-opacity=\'.2\'/%3E%3C/svg%3E")', backgroundSize: 'cover', backgroundPosition: 'center' }}>
-                {placedPoints.map((point, index) => (
-                  <div key={index} className="absolute w-6 h-6 bg-blue-500 border-2 border-white rounded-full transform -translate-x-1/2 -translate-y-1/2 shadow-lg" style={{ left: `${point.x}%`, top: `${point.y}%`, boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.2)' }}>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                {capturedRoofImage ? (
+                  <div onClick={addSolarPoint} className="relative border-4 border-indigo-500 rounded-lg overflow-hidden cursor-crosshair shadow-xl" style={{ aspectRatio: '4/3' }}>
+                    <img src={capturedRoofImage} alt="Captured roof" className="w-full h-full object-cover" />
+                    {placedPoints.map((point, index) => (
+                      <div key={index} className="absolute w-6 h-6 bg-blue-500 border-2 border-white rounded-full transform -translate-x-1/2 -translate-y-1/2 shadow-lg" style={{ left: `${point.x}%`, top: `${point.y}%`, boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.2)' }}>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-2 h-2 bg-white rounded-full"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="relative border-4 border-red-400 rounded-lg overflow-hidden shadow-xl bg-red-50 flex items-center justify-center" style={{ aspectRatio: '4/3' }}>
+                    <div className="text-center p-4">
+                      <p className="text-red-600 font-semibold text-lg mb-2">⚠️ No Image Captured</p>
+                      <p className="text-red-500 text-sm">Please go back to Step 1 and click "Capture Location" to capture your roof image.</p>
                     </div>
                   </div>
-                ))}
-                </div>
+                )}
               </div>
             </div>
             <div className="flex justify-between mt-6">
@@ -692,15 +718,59 @@ export default function CreateEstimation() {
             </div>
             <div className="flex justify-between mt-6">
               <button type="button" onClick={() => prevStep(6)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-6 rounded-lg transition-colors">← Back</button>
-              <button type="button" onClick={submitForm} disabled={createMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:opacity-50">
-                {createMutation.isPending ? 'Submitting...' : 'Submit Estimation'}
+              <button type="button" onClick={() => { submitForm(); setCurrentStep(7); }} disabled={createMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2">
+                <span>🚀</span>
+                <span>Submit Estimation</span>
               </button>
             </div>
           </div>
         )}
 
-        {/* Step 7: AI Detection Results - Visual Transparency */}
-        {currentStep === 7 && visualizationData && (
+        {/* Step 7: Processing Animation */}
+        {currentStep === 7 && (
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Step 7: AI Processing</h2>
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-8 border border-blue-200">
+              <div className="flex flex-col items-center justify-center space-y-6">
+                <div className="relative w-24 h-24">
+                  <div className="absolute inset-0 border-4 border-blue-200 rounded-full"></div>
+                  <div className="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
+                  <div className="absolute inset-3 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-4xl">☀️</span>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-blue-800 mb-2">Analyzing Your Roof...</p>
+                  <p className="text-gray-600">Our AI is detecting roof boundaries and calculating optimal panel placement</p>
+                </div>
+              </div>
+              <div className="mt-8 space-y-4 max-w-md mx-auto">
+                <div className="flex items-center text-gray-700">
+                  <span className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm mr-3">✓</span>
+                  <span className="font-medium">Uploading satellite image</span>
+                </div>
+                <div className="flex items-center text-gray-700">
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                  <span className="font-medium">Running SAM roof segmentation</span>
+                </div>
+                <div className="flex items-center text-gray-400">
+                  <span className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-white text-sm mr-3">3</span>
+                  <span>Calculating panel placement</span>
+                </div>
+                <div className="flex items-center text-gray-400">
+                  <span className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-white text-sm mr-3">4</span>
+                  <span>Generating results</span>
+                </div>
+              </div>
+              <p className="text-center text-sm text-gray-500 mt-6">This may take 1-2 minutes depending on image size...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Step 8: AI Detection Results - Visual Transparency */}
+        {currentStep === 8 && visualizationData && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">
               🤖 AI Roof Detection Results
@@ -718,6 +788,7 @@ export default function CreateEstimation() {
               
               <PolygonOverlay 
                 visualization={visualizationData}
+                capturedImage={capturedRoofImage}
                 onApprove={() => {
                   if (estimationId) {
                     navigate(`/estimations/${estimationId}`)

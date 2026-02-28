@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  sam-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DOWNLOAD_MODEL: "true"  # Set to false if mounting model from host
+    container_name: heliosmart-sam-service
+    ports:
+      - "8889:8889"
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+    volumes:
+      # Mount for development (hot reload)
+      - ./api_service.py:/app/api_service.py:ro
+      # Optional: Mount model from host to avoid re-downloading
+      # - ./sam_vit_h_4b8939.pth:/app/sam_vit_h_4b8939.pth:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8889/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # Model loading takes time
+
+  # CPU-only version (fallback if no GPU)
+  sam-service-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+      args:
+        DOWNLOAD_MODEL: "true"
+    container_name: heliosmart-sam-service-cpu
+    ports:
+      - "8889:8889"
+    environment:
+      - CUDA_VISIBLE_DEVICES=""  # Force CPU mode
+    volumes:
+      - ./api_service.py:/app/api_service.py:ro
+    profiles:
+      - cpu  # Only start with: docker-compose --profile cpu up
+    restart: unless-stopped

@@ -63,7 +63,7 @@ flowchart TB
 #### [`api_service.py`](py_service/api_service.py:1)
 **Purpose:** FastAPI service for roof segmentation using SAM (Segment Anything Model)
 
-**Status:** ⚠️ **Potential Issues Identified**
+**Status:** ✅ **Enhanced with Image Enhancement Features**
 
 | Issue | Severity | Description | Recommendation |
 |-------|----------|-------------|----------------|
@@ -71,6 +71,26 @@ flowchart TB
 | Memory Leak | Medium | Global variables retain model in memory indefinitely | Consider lazy loading with cleanup |
 | Coordinate Conversion | Medium | Uses simplified pixel-to-geo conversion | Implement proper georeferencing library |
 | Scaling | High | Fixed scale_meters_per_pixel requires manual input | Auto-calculate from image metadata |
+
+**New Features Implemented:**
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Enhancement Modes | ✅ **New** | Three enhancement modes (basic, advanced, aggressive) for improved roof detection |
+| CLAHE Processing | ✅ **New** | Contrast Limited Adaptive Histogram Equalization for local contrast enhancement |
+| Multi-scale Edge Detection | ✅ **New** | Combines multiple Canny thresholds for better edge detection |
+| Bilateral Filtering | ✅ **New** | Noise reduction while preserving edges |
+| Color Space Enhancement | ✅ **New** | HSV and LAB color space processing for better material distinction |
+
+**Enhancement Modes:**
+```python
+# Line ~100-150: New enhancement pipeline
+enhancement_mode = "advanced"  # basic | advanced | aggressive
+
+# Basic: Simple Gaussian blur + Canny edge detection
+# Advanced: CLAHE + Bilateral filter + Multi-scale Canny + HSV enhancement
+# Aggressive: Strong CLAHE + Multiple noise reduction + LAB color space + Multi-layer blending
+```
 
 **Code Review:**
 ```python

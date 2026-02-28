@@ -1,0 +1,21 @@
+# Core dependencies for SAM Roof Segmentation Service
+# Optimized for Docker with CUDA support
+
+# FastAPI and server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Image processing
+opencv-python-headless==4.9.0.80
+Pillow==10.2.0
+numpy==1.26.3
+
+# Geometry processing
+shapely==2.0.2
+
+# PyTorch is pre-installed in base image
+# torch and torchvision come from pytorch/pytorch base image
+
+# Pydantic for data validation
+pydantic==2.5.3
