@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom'
+﻿import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { estimationsAPI } from '@/services/api'
 import { useEffect, useRef, useState, useCallback } from 'react'
@@ -591,8 +591,9 @@ export default function EstimationDetails() {
   
   if (isLoading) {
     return (
-      <div className="text-center py-12">
-        <div className="text-gray-500">Loading estimation details...</div>
+      <div className="flex items-center justify-center gap-3 py-20">
+        <span className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-gray-500">Loading estimation details…</span>
       </div>
     )
   }
@@ -600,7 +601,7 @@ export default function EstimationDetails() {
   if (!estimation) {
     return (
       <div className="text-center py-12">
-        <div className="text-red-500">Estimation not found</div>
+        <div className="text-red-500 font-medium">Estimation not found</div>
       </div>
     )
   }
@@ -652,7 +653,7 @@ export default function EstimationDetails() {
   const sitePlanUsablePoly = (vizData?.usable_polygon ?? estimation.usable_polygon) || []
   
   return (
-    <div className="estimation-details-container space-y-6">
+    <div className="estimation-details-container space-y-8 pb-8">
       {/* Fixed header/footer for every printed page */}
       <div className="print-page-header">
         <img src={heliosmartLogo} alt="HelioSmart" />
@@ -661,571 +662,456 @@ export default function EstimationDetails() {
       <div className="print-page-footer">
         HelioSmart &copy; {new Date().getFullYear()} &middot; Solar Energy Project Report &middot; Project #{estimation.id}
       </div>
-      
-      {/* HelioSmart Branding Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 shadow-xl rounded-lg p-6 text-white print-header" style={{ pageBreakAfter: 'avoid' }}>
-        <div className="flex justify-between items-center mb-3">
+
+      {/* Hero Header  deep navy corporate */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-800 via-[#1e3a5f] to-slate-900 shadow-xl rounded-2xl p-8 text-white print-header" style={{ pageBreakAfter: 'avoid' }}>
+        <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+        <div className="absolute -top-20 -right-20 w-56 h-56 rounded-full bg-teal-400/10 blur-2xl" />
+        <div className="absolute -bottom-16 -left-16 w-44 h-44 rounded-full bg-sky-400/10 blur-2xl" />
+
+        <div className="relative z-10 flex justify-between items-center mb-4">
           <div className="flex items-center gap-4">
-            <img src={heliosmartLogo} alt="HelioSmart" className="h-12" />
+            <img src={heliosmartLogo} alt="HelioSmart" className="h-11 brightness-0 invert" />
           </div>
-          <div className="text-right">
-            <span className="text-xs uppercase tracking-widest text-amber-400 font-semibold">Confidential Solar Audit Report</span>
-          </div>
+          <span className="text-[10px] uppercase tracking-[0.25em] text-slate-300 font-semibold bg-white/10 px-3 py-1 rounded-full border border-white/10">Confidential Solar Audit</span>
         </div>
-        <div className="border-t border-white/20 pt-4 flex justify-between items-end">
+        <div className="relative z-10 border-t border-white/15 pt-5 flex justify-between items-end">
           <div>
-            <h1 className="text-2xl font-bold">Solar Energy Project Report</h1>
-            <p className="text-blue-200 text-sm mt-1">Project ID: #{estimation.id} &middot; {new Date(estimation.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            <h1 className="text-3xl font-extrabold tracking-tight">Solar Energy Project Report</h1>
+            <p className="text-slate-400 text-sm mt-1.5">
+              Project #{estimation.id} &middot; {new Date(estimation.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
           </div>
           <div className="flex gap-3 no-print">
-            <button
-              onClick={handlePrint}
-              className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors border border-white/20"
-            >
-              <Printer className="w-5 h-5" />
-              Print Report
+            <button onClick={handlePrint} className="bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white px-4 py-2.5 rounded-xl flex items-center gap-2 text-sm font-medium transition-all border border-white/15">
+              <Printer className="w-4 h-4" /> Print
             </button>
-            <button
-              onClick={handleDownloadPDF}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-semibold"
-            >
-              <Download className="w-5 h-5" />
-              Download PDF
+            <button onClick={handleDownloadPDF} className="bg-white hover:bg-gray-50 text-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold transition-all shadow-lg shadow-black/15">
+              <Download className="w-4 h-4" /> Download PDF
             </button>
           </div>
         </div>
       </div>
-      
-      {/* Main Project Overview */}
+
+      {/* Quick Stats Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'System Size', value: `${Number(estimation.system_capacity || 0).toFixed(2)} kW`, color: 'slate', icon: <Zap className="w-5 h-5" /> },
+          { label: 'Annual Production', value: `${Math.round(estimation.energy_annual || 0).toLocaleString()} kWh`, color: 'teal', icon: <TrendingUp className="w-5 h-5" /> },
+          { label: 'Panel Count', value: estimation.panel_count || 'N/A', color: 'sky', icon: null },
+          { label: 'Payback', value: `${paybackPeriod.toFixed(1)} yrs`, color: 'emerald', icon: null },
+        ].map(({ label, value, color, icon }, i) => (
+          <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 relative overflow-hidden group hover:shadow-md transition-shadow">
+            <div className={`absolute top-0 left-0 w-1 h-full bg-${color}-500`} />
+            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-1">{label}</p>
+            <div className="flex items-end gap-2">
+              <p className="text-2xl font-extrabold text-gray-900">{value}</p>
+              {icon && <span className={`text-${color}-500 mb-0.5`}>{icon}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Location + System Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-        {/* Left Side - Location Details */}
         <div className="lg:col-span-2">
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-            <h3 className="text-lg font-semibold text-orange-600 mb-4">Location Details</h3>
-            <div className="space-y-3">
-              <div className="flex items-start">
-                <MapPin className="w-5 h-5 text-gray-500 mr-2 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Address</p>
-                  <p className="text-sm text-gray-600">{estimation.address || `${estimation.city}, ${estimation.state} ${estimation.zip_code}`}</p>
-                </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-5 flex items-center gap-2"><MapPin className="w-4 h-4" /> Location Details</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-0.5">Address</p>
+                <p className="text-sm text-gray-800 font-medium">{estimation.address || `${estimation.city}, ${estimation.state} ${estimation.zip_code}`}</p>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-700">Coordinates</p>
-                <p className="text-sm text-gray-600">{estimation.latitude.toFixed(6)}, {estimation.longitude.toFixed(6)}</p>
+                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-0.5">Coordinates</p>
+                <p className="text-sm text-gray-600 font-mono">{estimation.latitude.toFixed(6)}, {estimation.longitude.toFixed(6)}</p>
               </div>
               {estimation.customer_name && (
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Customer</p>
-                  <p className="text-sm text-gray-600">{estimation.customer_name}</p>
-                  {estimation.email && <p className="text-sm text-gray-600">{estimation.email}</p>}
+                  <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-0.5">Customer</p>
+                  <p className="text-sm text-gray-800 font-medium">{estimation.customer_name}</p>
+                  {estimation.email && <p className="text-xs text-gray-400">{estimation.email}</p>}
                 </div>
               )}
-              {/* AI Roof Detection Info */}
-              <div className="mt-4 pt-3 border-t border-gray-200">
-                <p className="text-sm font-medium text-gray-700 mb-2">AI Roof Detection</p>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-gray-500">Roof Type:</span>
-                    <span className="ml-1 text-gray-700">{estimation.roof_type || estimation.roof_type_detected || 'flat'}</span>
-                  </div>
-                  {estimation.roof_tilt && (
-                    <div>
-                      <span className="text-gray-500">Roof Tilt:</span>
-                      <span className="ml-1 text-gray-700">{estimation.roof_tilt}°</span>
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-3">AI Roof Detection</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { k: 'Roof Type', v: estimation.roof_type || estimation.roof_type_detected || 'flat' },
+                    estimation.roof_tilt && { k: 'Roof Tilt', v: `${estimation.roof_tilt}deg` },
+                    estimation.facade_reduction_ratio && { k: 'Facade Factor', v: `${(estimation.facade_reduction_ratio * 100).toFixed(0)}%` },
+                    estimation.meters_per_pixel && { k: 'Scale', v: `${estimation.meters_per_pixel?.toFixed(3)} m/px` },
+                  ].filter(Boolean).map(({ k, v }, i) => (
+                    <div key={i} className="bg-gray-50 rounded-lg p-2.5">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider">{k}</p>
+                      <p className="text-sm font-semibold text-gray-700">{v}</p>
                     </div>
-                  )}
-                  {estimation.facade_reduction_ratio && (
-                    <div>
-                      <span className="text-gray-500">Facade Factor:</span>
-                      <span className="ml-1 text-gray-700">{(estimation.facade_reduction_ratio * 100).toFixed(0)}%</span>
-                    </div>
-                  )}
-                  {estimation.meters_per_pixel && (
-                    <div>
-                      <span className="text-gray-500">Scale:</span>
-                      <span className="ml-1 text-gray-700">{estimation.meters_per_pixel?.toFixed(3)} m/px</span>
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
             </div>
           </div>
         </div>
-        
-        {/* Right Side - System Overview */}
+
         <div className="lg:col-span-3 space-y-6">
-          {/* System Size Cards */}
           <div>
-            <h3 className="text-lg font-semibold text-orange-600 mb-4">System Size</h3>
+            <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-4">System Size</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-600">
-                <p className="text-sm text-gray-600">Usable Roof Area</p>
-                <p className="text-2xl font-bold text-gray-800">{usableArea ? usableArea.toFixed(1) : 'N/A'}</p>
-                <p className="text-xs text-gray-500">sq. meters (AI detected)</p>
-              </div>
-              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-600">
-                <p className="text-sm text-gray-600">Panel Count</p>
-                <p className="text-2xl font-bold text-gray-800">{estimation.panel_count || 'N/A'}</p>
-                <p className="text-xs text-gray-500">panels</p>
-              </div>
-              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-600">
-                <p className="text-sm text-gray-600">System Capacity</p>
-                <p className="text-2xl font-bold text-gray-800">{Number(estimation.system_capacity).toFixed(2)}</p>
-                <p className="text-xs text-gray-500">kW</p>
-              </div>
+              {[
+                { label: 'Usable Roof Area', value: usableArea ? usableArea.toFixed(1) : 'N/A', unit: 'sq. meters', sub: 'AI detected' },
+                { label: 'Panel Count', value: estimation.panel_count || 'N/A', unit: 'panels', sub: '' },
+                { label: 'System Capacity', value: Number(estimation.system_capacity).toFixed(2), unit: 'kW', sub: '' },
+              ].map(({ label, value, unit, sub }, i) => (
+                <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 border-l-4 border-l-slate-300">
+                  <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{label}</p>
+                  <p className="text-2xl font-extrabold text-gray-900 mt-1">{value}</p>
+                  <p className="text-xs text-gray-400">{unit} {sub && <span className="text-teal-600 font-medium">({sub})</span>}</p>
+                </div>
+              ))}
             </div>
           </div>
-          
-          {/* Environmental Impact */}
+
           <div>
-            <h3 className="text-lg font-semibold text-green-600 mb-4">Environmental Impact</h3>
+            <h3 className="text-sm font-bold text-emerald-700 uppercase tracking-wider mb-4">Environmental Impact</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-green-600">
-                <p className="text-sm text-gray-600">CO₂ Offset</p>
-                <p className="text-2xl font-bold text-green-600">{Math.round((estimation.energy_annual || 0) * 0.7 / 1000)}</p>
-                <p className="text-xs text-gray-500">tons/year</p>
-              </div>
-              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-green-600">
-                <p className="text-sm text-gray-600">Trees Planted Equivalent</p>
-                <p className="text-2xl font-bold text-green-600">{Math.round((estimation.energy_annual || 0) * 0.7 / 50)}</p>
-                <p className="text-xs text-gray-500">trees/year</p>
-              </div>
-              <div className="bg-white p-4 rounded-lg shadow border-l-4 border-green-600">
-                <p className="text-sm text-gray-600">Cars Off Road</p>
-                <p className="text-2xl font-bold text-green-600">{Math.round((estimation.energy_annual || 0) * 0.7 / 4600)}</p>
-                <p className="text-xs text-gray-500">equivalent</p>
-              </div>
+              {[
+                { label: 'CO2 Offset', value: Math.round((estimation.energy_annual || 0) * 0.7 / 1000), unit: 'tons/year', icon: '' },
+                { label: 'Trees Equivalent', value: Math.round((estimation.energy_annual || 0) * 0.7 / 50), unit: 'trees/year', icon: '' },
+                { label: 'Cars Off Road', value: Math.round((estimation.energy_annual || 0) * 0.7 / 4600), unit: 'equivalent', icon: '' },
+              ].map(({ label, value, unit, icon }, i) => (
+                <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 border-l-4 border-l-emerald-400">
+                  <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{label}</p>
+                  <div className="flex items-end gap-2 mt-1">
+                    <p className="text-2xl font-extrabold text-emerald-700">{value}</p>
+                    <span className="text-lg mb-0.5">{icon}</span>
+                  </div>
+                  <p className="text-xs text-gray-400">{unit}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
-      
-      {/* ===== PROPOSED SOLAR SITE PLAN (Hero Section) ===== */}
-      <div className="bg-white shadow-xl rounded-lg overflow-hidden" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
-        {/* Section Header */}
-        <div className="bg-gradient-to-r from-blue-900 to-slate-800 px-6 py-4">
-          <h2 className="text-xl font-bold text-white tracking-wide">Proposed Solar Site Plan</h2>
-          <p className="text-blue-200 text-sm mt-1">AI-powered roof analysis with optimized panel placement</p>
+
+      {/* Solar Site Plan */}
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
+        <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-6 py-4">
+          <h2 className="text-lg font-bold text-white tracking-wide">Proposed Solar Site Plan</h2>
+          <p className="text-slate-300 text-sm mt-0.5">AI-powered roof analysis with optimized panel placement</p>
         </div>
-        
         <div className="p-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* LEFT — Site plan image */}
             <div>
               {(estimation.site_plan_snapshot || sitePlanImageUrl) ? (
-                <div style={{ position: 'relative', display: 'block', width: '100%', minHeight: '260px' }} className="rounded-lg overflow-hidden border-2 border-gray-200 shadow-lg">
-                  <img
-                    src={estimation.site_plan_snapshot || sitePlanImageUrl}
-                    alt="Approved solar site plan"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    onError={(e) => { e.target.style.display = 'none' }}
-                  />
-                  {/* HelioSmart corner watermark */}
-                  <div style={{ position: 'absolute', bottom: 10, right: 12, pointerEvents: 'none', opacity: 0.7 }}>
-                    <img src={heliosmartLogo} alt="" style={{ height: '20px', filter: 'brightness(0) invert(1) drop-shadow(0 1px 3px rgba(0,0,0,0.8))' }} />
+                <div className="relative rounded-xl overflow-hidden border-2 border-gray-200 shadow-lg" style={{ minHeight: '260px' }}>
+                  <img src={estimation.site_plan_snapshot || sitePlanImageUrl} alt="Solar site plan" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={(e) => { e.target.style.display = 'none' }} />
+                  <div className="absolute bottom-2 right-3 opacity-60">
+                    <img src={heliosmartLogo} alt="" style={{ height: '18px', filter: 'brightness(0) invert(1) drop-shadow(0 1px 4px rgba(0,0,0,0.6))' }} />
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 text-center text-gray-400" style={{ minHeight: '260px' }}>
+                <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 text-gray-400 text-center" style={{ minHeight: '260px' }}>
                   <div>
-                    <svg className="mx-auto h-14 w-14 mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                    <svg className="mx-auto h-12 w-12 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     <p className="text-sm">No satellite image available</p>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* RIGHT — Legend + system metrics */}
-            <div className="flex flex-col justify-between gap-4">
-              {/* Legend */}
+            <div className="flex flex-col justify-between gap-5">
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Map Legend</h3>
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="inline-block w-6 h-4 rounded flex-shrink-0" style={{ backgroundColor: 'rgba(34, 197, 94, 0.4)', border: '2px solid #22c55e' }}></span>
-                    <span className="text-sm text-gray-700">Usable Roof Area — <span className="font-semibold">{usableArea ? usableArea.toFixed(1) : '—'} m²</span></span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="inline-block w-6 h-4 rounded flex-shrink-0" style={{ backgroundColor: '#1a2f4a', border: '2px solid #1a1a2e' }}></span>
-                    <span className="text-sm text-gray-700">Solar Modules — <span className="font-semibold">{estimation.panel_count || 0} panels</span></span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="inline-block w-6 h-4 rounded flex-shrink-0" style={{ border: '2px dashed #3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.08)' }}></span>
-                    <span className="text-sm text-gray-700">Detected Roof Boundary</span>
-                  </div>
+                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Map Legend</h3>
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center gap-3"><span className="inline-block w-6 h-4 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.35)', border: '2px solid #22c55e' }} /><span className="text-sm text-gray-600">Usable Roof Area  <span className="font-semibold text-gray-800">{usableArea ? usableArea.toFixed(1) : ''} m2</span></span></div>
+                  <div className="flex items-center gap-3"><span className="inline-block w-6 h-4 rounded" style={{ backgroundColor: '#1a2f4a', border: '2px solid #1a1a2e' }} /><span className="text-sm text-gray-600">Solar Modules  <span className="font-semibold text-gray-800">{estimation.panel_count || 0} panels</span></span></div>
+                  <div className="flex items-center gap-3"><span className="inline-block w-6 h-4 rounded" style={{ border: '2px dashed #3b82f6', backgroundColor: 'rgba(59,130,246,0.08)' }} /><span className="text-sm text-gray-600">Detected Roof Boundary</span></div>
                 </div>
               </div>
-
-              {/* Key metrics */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">System Parameters</h3>
+                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">System Parameters</h3>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-blue-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-blue-500 uppercase tracking-wide mb-1">System Size</p>
-                    <p className="text-xl font-bold text-blue-800">{Number(estimation.system_capacity || 0).toFixed(2)} <span className="text-sm font-medium">kW</span></p>
-                  </div>
-                  <div className="bg-green-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-green-500 uppercase tracking-wide mb-1">Panels</p>
-                    <p className="text-xl font-bold text-green-800">{estimation.panel_count || 0}</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Azimuth</p>
-                    <p className="text-xl font-bold text-gray-800">{estimation.azimuth || estimation.panel_azimuth || 180}°</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Tilt</p>
-                    <p className="text-xl font-bold text-gray-800">{estimation.tilt || estimation.panel_tilt || estimation.roof_tilt || 30}°</p>
-                  </div>
-                  <div className="bg-orange-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-orange-500 uppercase tracking-wide mb-1">Capacity Factor</p>
-                    <p className="text-xl font-bold text-orange-800">{capacityFactorDisplay}%</p>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-purple-500 uppercase tracking-wide mb-1">Roof Area</p>
-                    <p className="text-xl font-bold text-purple-800">{usableArea ? usableArea.toFixed(0) : '—'} <span className="text-sm font-medium">m²</span></p>
-                  </div>
+                  {[
+                    { label: 'System Size', value: `${Number(estimation.system_capacity || 0).toFixed(2)} kW`, bg: 'bg-slate-50', text: 'text-slate-800', sub: 'text-slate-500' },
+                    { label: 'Panels', value: estimation.panel_count || 0, bg: 'bg-slate-50', text: 'text-slate-800', sub: 'text-slate-500' },
+                    { label: 'Azimuth', value: `${estimation.azimuth || 180} deg`, bg: 'bg-sky-50', text: 'text-sky-800', sub: 'text-sky-500' },
+                    { label: 'Tilt', value: `${estimation.tilt || estimation.roof_tilt || 30} deg`, bg: 'bg-sky-50', text: 'text-sky-800', sub: 'text-sky-500' },
+                    { label: 'Capacity Factor', value: `${capacityFactorDisplay}%`, bg: 'bg-teal-50', text: 'text-teal-800', sub: 'text-teal-500' },
+                    { label: 'Roof Area', value: `${usableArea ? usableArea.toFixed(0) : ''} m2`, bg: 'bg-teal-50', text: 'text-teal-800', sub: 'text-teal-500' },
+                  ].map(({ label, value, bg, text, sub }, i) => (
+                    <div key={i} className={`${bg} rounded-xl p-3 text-center`}>
+                      <p className={`text-[10px] ${sub} uppercase tracking-wider font-semibold mb-1`}>{label}</p>
+                      <p className={`text-lg font-bold ${text}`}>{value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-      
+
       {/* Financial Overview */}
-      <div className="bg-white shadow rounded-lg p-6" style={{ pageBreakBefore: 'always' }}>
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Financial Overview</h2>
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6" style={{ pageBreakBefore: 'always' }}>
+        <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center"><span className="text-white text-xs font-bold">$</span></span>
+          Financial Overview
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Left Side - Investment Breakdown */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Investment Breakdown</h3>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">System Cost</p>
-                <p className="text-xl font-bold text-gray-800">{formatMAD(systemCost)}</p>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Investment Breakdown</h3>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {[
+                { label: 'System Cost', value: formatMAD(systemCost) },
+                { label: 'Installation', value: formatMAD(installationCost) },
+              ].map(({ label, value }, i) => (
+                <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+                  <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{label}</p>
+                  <p className="text-lg font-bold text-gray-900 mt-1">{value}</p>
+                </div>
+              ))}
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 col-span-2">
+                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Consultation Fees</p>
+                <p className="text-lg font-bold text-gray-900 mt-1">{formatMAD(consultationFees)}</p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Installation</p>
-                <p className="text-xl font-bold text-gray-800">{formatMAD(installationCost)}</p>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg col-span-2">
-                <p className="text-sm text-gray-600">Consultation Fees</p>
-                <p className="text-xl font-bold text-gray-800">{formatMAD(consultationFees)}</p>
-              </div>
-              <div className="col-span-2">
-                <canvas ref={financialChartRef} style={{ maxHeight: '200px' }}></canvas>
-              </div>
+              <div className="col-span-2"><canvas ref={financialChartRef} style={{ maxHeight: '200px' }}></canvas></div>
             </div>
-            <div className="border-t-2 border-blue-600 pt-3 mt-2">
-              <div className="bg-blue-50 rounded-lg p-4 flex justify-between items-center">
-                <span className="text-lg font-bold text-gray-800">Total Investment</span>
-                <span className="text-2xl font-extrabold text-blue-700">{formatMAD(totalInvestment)}</span>
+            <div className="border-t-2 border-slate-300 pt-3 mt-2">
+              <div className="bg-slate-50 rounded-xl p-4 flex justify-between items-center">
+                <span className="text-sm font-bold text-gray-700">Total Investment</span>
+                <span className="text-xl font-extrabold text-slate-800">{formatMAD(totalInvestment)}</span>
               </div>
             </div>
           </div>
-          
-          {/* Right Side - Financial Returns */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Financial Returns</h3>
-            <div className="space-y-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Annual Savings</p>
-                <p className="text-2xl font-bold text-green-600">{formatMAD(annualSavings)}</p>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Financial Returns</h3>
+            <div className="space-y-3">
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Annual Savings</p>
+                <p className="text-2xl font-bold text-emerald-700 mt-1">{formatMAD(annualSavings)}</p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Payback Period</p>
-                <p className="text-2xl font-bold text-orange-600">{paybackPeriod.toFixed(1)} years</p>
-                <p className="text-xs text-gray-500 mt-1">Based on total investment of {formatMAD(totalInvestment)}</p>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Payback Period</p>
+                <p className="text-2xl font-bold text-slate-800 mt-1">{paybackPeriod.toFixed(1)} years</p>
+                <p className="text-xs text-gray-400 mt-1">Based on investment of {formatMAD(totalInvestment)}</p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">ROI (25 years)</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {totalInvestment > 0
-                    ? ((total25YearSavings / totalInvestment) * 100).toFixed(1)
-                    : '0.0'}%
-                </p>
+              <div className="bg-sky-50 border border-sky-100 rounded-xl p-4">
+                <p className="text-[10px] text-sky-600 font-semibold uppercase tracking-wider">ROI (25 years)</p>
+                <p className="text-2xl font-bold text-sky-700 mt-1">{totalInvestment > 0 ? ((total25YearSavings / totalInvestment) * 100).toFixed(1) : '0.0'}%</p>
               </div>
             </div>
-            <div className="border-t pt-3 mt-4">
+            <div className="border-t border-gray-100 pt-3 mt-4">
               <div className="flex justify-between items-center">
-                <span className="text-lg font-semibold text-gray-700">Total 25 Year Savings</span>
-                <span className="text-2xl font-bold text-green-600">{formatMAD(total25YearSavings)}</span>
+                <span className="text-sm font-semibold text-gray-700">Total 25-Year Savings</span>
+                <span className="text-xl font-extrabold text-emerald-600">{formatMAD(total25YearSavings)}</span>
               </div>
             </div>
           </div>
         </div>
       </div>
-      
-      {/* Return on Investment Chart */}
-      <div className="bg-white shadow rounded-lg p-6" style={{ pageBreakInside: 'avoid' }}>
-        <h3 className="text-lg font-semibold text-gray-700 mb-4">Return on Investment</h3>
-        <div style={{ height: '300px' }}>
-          <canvas ref={roiChartRef}></canvas>
-        </div>
+
+      {/* ROI Chart */}
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6" style={{ pageBreakInside: 'avoid' }}>
+        <h3 className="text-sm font-bold text-gray-700 mb-4">Return on Investment</h3>
+        <div style={{ height: '300px' }}><canvas ref={roiChartRef}></canvas></div>
       </div>
-      
-      {/* Performance Metrics */}
-      <div className="bg-white shadow rounded-lg p-6" style={{ pageBreakInside: 'avoid' }}>
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Performance Metrics</h2>
+
+      {/* Performance Metrics Grid */}
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6" style={{ pageBreakInside: 'avoid' }}>
+        <h2 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center"><Zap className="w-4 h-4 text-white" /></span>
+          Performance Metrics
+        </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
-            <Zap className="w-8 h-8 text-orange-600 mb-2" />
-            <p className="text-sm text-gray-600">System Capacity</p>
-            <p className="text-2xl font-bold text-gray-800">{Number(estimation.system_capacity || 0).toFixed(2)} kW</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
-            <TrendingUp className="w-8 h-8 text-orange-600 mb-2" />
-            <p className="text-sm text-gray-600">Annual Production</p>
-            <p className="text-2xl font-bold text-gray-800">{Math.round(estimation.energy_annual || 0).toLocaleString()} kWh</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
-            <p className="text-sm text-gray-600">Panel Count</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.panel_count || 'N/A'}</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
-            <p className="text-sm text-gray-600">Capacity Factor</p>
-            <p className="text-2xl font-bold text-gray-800">{capacityFactorDisplay}%</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
-            <p className="text-sm text-gray-600">Tilt Angle</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.tilt?.toFixed(1)}°</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
-            <p className="text-sm text-gray-600">Azimuth</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.azimuth?.toFixed(1)}°</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
-            <p className="text-sm text-gray-600">System Losses</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.losses?.toFixed(1)}%</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
-            <p className="text-sm text-gray-600">Solar Irradiance</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.solrad_annual ? estimation.solrad_annual.toFixed(2) : (estimation.solar_irradiance_avg?.toFixed(2) || 'N/A')} kWh/m²/day</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
-            <p className="text-sm text-gray-600">Coverage</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.coverage_percentage}%</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
-            <p className="text-sm text-gray-600">Usable Area</p>
-            <p className="text-2xl font-bold text-gray-800">{usableArea ? usableArea.toFixed(1) : 'N/A'} m²</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
-            <p className="text-sm text-gray-600">Performance Ratio</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.performance_ratio ? (estimation.performance_ratio * 100).toFixed(1) : 'N/A'}%</p>
-          </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
-            <p className="text-sm text-gray-600">Production/kW</p>
-            <p className="text-2xl font-bold text-gray-800">
-              {productionPerKw != null
-                ? Number(productionPerKw).toLocaleString('en-US', { maximumFractionDigits: 0 })
-                : estimation.system_capacity > 0
-                  ? Math.round((estimation.energy_annual || 0) / estimation.system_capacity).toLocaleString()
-                  : 'N/A'
-              } kWh
-            </p>
-          </div>
+          {[
+            { label: 'System Capacity', value: `${Number(estimation.system_capacity || 0).toFixed(2)} kW`, accent: 'slate', icon: <Zap className="w-5 h-5" /> },
+            { label: 'Annual Production', value: `${Math.round(estimation.energy_annual || 0).toLocaleString()} kWh`, accent: 'teal', icon: <TrendingUp className="w-5 h-5" /> },
+            { label: 'Panel Count', value: estimation.panel_count || 'N/A', accent: 'slate' },
+            { label: 'Capacity Factor', value: `${capacityFactorDisplay}%`, accent: 'teal' },
+            { label: 'Tilt Angle', value: `${estimation.tilt?.toFixed(1)} deg`, accent: 'sky' },
+            { label: 'Azimuth', value: `${estimation.azimuth?.toFixed(1)} deg`, accent: 'sky' },
+            { label: 'System Losses', value: `${estimation.losses?.toFixed(1)}%`, accent: 'sky' },
+            { label: 'Solar Irradiance', value: `${estimation.solrad_annual ? estimation.solrad_annual.toFixed(2) : (estimation.solar_irradiance_avg?.toFixed(2) || 'N/A')} kWh/m2/d`, accent: 'sky' },
+            { label: 'Coverage', value: `${estimation.coverage_percentage}%`, accent: 'emerald' },
+            { label: 'Usable Area', value: `${usableArea ? usableArea.toFixed(1) : 'N/A'} m2`, accent: 'emerald' },
+            { label: 'Perf. Ratio', value: `${estimation.performance_ratio ? (estimation.performance_ratio * 100).toFixed(1) : 'N/A'}%`, accent: 'emerald' },
+            { label: 'Production/kW', value: `${productionPerKw != null ? Number(productionPerKw).toLocaleString('en-US', { maximumFractionDigits: 0 }) : estimation.system_capacity > 0 ? Math.round((estimation.energy_annual || 0) / estimation.system_capacity).toLocaleString() : 'N/A'} kWh`, accent: 'emerald' },
+          ].map(({ label, value, accent, icon }, i) => (
+            <div key={i} className={`bg-white rounded-xl p-4 border border-gray-100 shadow-sm border-l-4 border-l-${accent}-400 hover:shadow-md transition-shadow`}>
+              {icon && <span className={`text-${accent}-500 mb-2 block`}>{icon}</span>}
+              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{label}</p>
+              <p className="text-xl font-bold text-gray-900 mt-1">{value}</p>
+            </div>
+          ))}
         </div>
       </div>
-      
-      {/* Technical Specifications & Equipment (BOM) */}
-      <div className="bg-white shadow rounded-lg p-6" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">Technical Specifications &amp; Equipment</h2>
-        <p className="text-sm text-gray-500 mb-6">Bill of Materials for the proposed solar installation</p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+      {/* Technical Specifications and Equipment */}
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
+        <h2 className="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2"/><path d="M3 12h18M12 3v18" strokeWidth="1.5"/></svg>
+          </span>
+          Technical Specifications &amp; Equipment
+        </h2>
+        <p className="text-sm text-gray-400 mb-6 ml-10">Bill of Materials for the proposed solar installation</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Module */}
-          <div className="border border-blue-200 rounded-lg p-5 bg-gradient-to-br from-blue-50 to-white">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
+          <div className="border border-sky-100 rounded-xl p-5 bg-sky-50/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-md shadow-sky-200">
                 <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2"/><path d="M3 12h18M12 3v18" strokeWidth="1.5"/></svg>
               </div>
               <div>
-                <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Solar Module</p>
-                <p className="text-lg font-bold text-gray-800">
-                  {estimation.panel_info
-                    ? `${estimation.panel_info.brand ? estimation.panel_info.brand + ' ' : ''}${estimation.panel_info.name}`
-                    : 'N/A'}
-                </p>
+                <p className="text-[10px] text-sky-600 font-bold uppercase tracking-wider">Solar Module</p>
+                <p className="text-base font-bold text-gray-900">{estimation.panel_info ? `${estimation.panel_info.brand ? estimation.panel_info.brand + ' ' : ''}${estimation.panel_info.name}` : 'N/A'}</p>
               </div>
             </div>
             {estimation.panel_info ? (
-              <div className="space-y-1 text-sm text-gray-600">
-                <div className="flex justify-between"><span>Quantity</span><span className="font-semibold text-gray-800">{estimation.panel_count || '—'} panels</span></div>
-                <div className="flex justify-between"><span>Type</span><span className="font-semibold text-gray-800">{estimation.panel_info.type || '—'}</span></div>
-                <div className="flex justify-between"><span>Rated Power</span><span className="font-semibold text-gray-800">{estimation.panel_info.panel_rated_power} Wp</span></div>
-                <div className="flex justify-between"><span>Total DC Capacity</span><span className="font-semibold text-gray-800">{((estimation.panel_count || 0) * (estimation.panel_info.panel_rated_power / 1000)).toFixed(2)} kWp</span></div>
-                {estimation.panel_info.module_efficiency && (
-                  <div className="flex justify-between"><span>Efficiency</span><span className="font-semibold text-gray-800">{estimation.panel_info.module_efficiency.toFixed(1)}%</span></div>
-                )}
-                {estimation.panel_info.open_circuit_voltage && (
-                  <div className="flex justify-between"><span>Voc</span><span className="font-semibold text-gray-800">{estimation.panel_info.open_circuit_voltage} V</span></div>
-                )}
-                {estimation.panel_info.num_of_cells && (
-                  <div className="flex justify-between"><span>Cell Count</span><span className="font-semibold text-gray-800">{estimation.panel_info.num_of_cells} cells</span></div>
-                )}
-                {estimation.panel_info.connector_type && (
-                  <div className="flex justify-between"><span>Connector</span><span className="font-semibold text-gray-800">{estimation.panel_info.connector_type}</span></div>
-                )}
-                {estimation.panel_info.warranty_years && (
-                  <div className="flex justify-between"><span>Warranty</span><span className="font-semibold text-gray-800">{estimation.panel_info.warranty_years} years</span></div>
-                )}
+              <div className="space-y-2 text-sm">
+                {[
+                  ['Quantity', `${estimation.panel_count || ''} panels`],
+                  ['Type', estimation.panel_info.type || ''],
+                  ['Rated Power', `${estimation.panel_info.panel_rated_power} Wp`],
+                  ['Total DC Capacity', `${((estimation.panel_count || 0) * (estimation.panel_info.panel_rated_power / 1000)).toFixed(2)} kWp`],
+                  estimation.panel_info.module_efficiency && ['Efficiency', `${estimation.panel_info.module_efficiency.toFixed(1)}%`],
+                  estimation.panel_info.open_circuit_voltage && ['Voc', `${estimation.panel_info.open_circuit_voltage} V`],
+                  estimation.panel_info.num_of_cells && ['Cell Count', `${estimation.panel_info.num_of_cells} cells`],
+                  estimation.panel_info.connector_type && ['Connector', estimation.panel_info.connector_type],
+                  estimation.panel_info.warranty_years && ['Warranty', `${estimation.panel_info.warranty_years} years`],
+                ].filter(Boolean).map(([k, v], i) => (
+                  <div key={i} className="flex justify-between"><span className="text-gray-400">{k}</span><span className="font-semibold text-gray-700">{v}</span></div>
+                ))}
               </div>
-            ) : (
-              <p className="text-sm text-gray-400 italic">Panel data not available</p>
-            )}
+            ) : <p className="text-sm text-gray-400 italic">Panel data not available</p>}
           </div>
-          
+
           {/* Inverter */}
-          <div className="border border-emerald-200 rounded-lg p-5 bg-gradient-to-br from-emerald-50 to-white">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center">
+          <div className="border border-emerald-100 rounded-xl p-5 bg-emerald-50/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-md shadow-emerald-200">
                 <Zap className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wide">Inverter</p>
-                <p className="text-lg font-bold text-gray-800">
-                  {estimation.inverter_info
-                    ? `${estimation.inverter_info.brand ? estimation.inverter_info.brand + ' ' : ''}${estimation.inverter_info.name}`
-                    : estimation.inverter_combos?.[0]?.model || 'N/A'}
-                </p>
+                <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Inverter</p>
+                <p className="text-base font-bold text-gray-900">{estimation.inverter_info ? `${estimation.inverter_info.brand ? estimation.inverter_info.brand + ' ' : ''}${estimation.inverter_info.name}` : estimation.inverter_combos?.[0]?.model || 'N/A'}</p>
               </div>
             </div>
             {estimation.inverter_info ? (
-              <div className="space-y-1 text-sm text-gray-600">
-                <div className="flex justify-between"><span>Quantity</span><span className="font-semibold text-gray-800">{estimation.inverter_combos?.[0]?.qty || 1} unit{(estimation.inverter_combos?.[0]?.qty || 1) > 1 ? 's' : ''}</span></div>
-                <div className="flex justify-between"><span>Phase</span><span className="font-semibold text-gray-800">{estimation.inverter_info.phase_type || '—'}</span></div>
-                <div className="flex justify-between"><span>AC Output</span><span className="font-semibold text-gray-800">{estimation.inverter_info.nominal_ac_power_kw} kW</span></div>
-                {estimation.inverter_info.efficiency_max && (
-                  <div className="flex justify-between"><span>Max Efficiency</span><span className="font-semibold text-gray-800">{estimation.inverter_info.efficiency_max.toFixed(1)}%</span></div>
-                )}
-                {estimation.inverter_info.no_of_mppt_ports && (
-                  <div className="flex justify-between"><span>MPPT Inputs</span><span className="font-semibold text-gray-800">{estimation.inverter_info.no_of_mppt_ports}</span></div>
-                )}
-                {estimation.inverter_info.max_strings_per_mppt && (
-                  <div className="flex justify-between"><span>Strings / MPPT</span><span className="font-semibold text-gray-800">{estimation.inverter_info.max_strings_per_mppt}</span></div>
-                )}
-                {estimation.inverter_info.ip_rating && (
-                  <div className="flex justify-between"><span>IP Rating</span><span className="font-semibold text-gray-800">{estimation.inverter_info.ip_rating}</span></div>
-                )}
-                {estimation.inverter_info.warranty && (
-                  <div className="flex justify-between"><span>Warranty</span><span className="font-semibold text-gray-800">{estimation.inverter_info.warranty} years</span></div>
-                )}
+              <div className="space-y-2 text-sm">
+                {[
+                  ['Quantity', `${estimation.inverter_combos?.[0]?.qty || 1} unit${(estimation.inverter_combos?.[0]?.qty || 1) > 1 ? 's' : ''}`],
+                  ['Phase', estimation.inverter_info.phase_type || ''],
+                  ['AC Output', `${estimation.inverter_info.nominal_ac_power_kw} kW`],
+                  estimation.inverter_info.efficiency_max && ['Max Efficiency', `${estimation.inverter_info.efficiency_max.toFixed(1)}%`],
+                  estimation.inverter_info.no_of_mppt_ports && ['MPPT Inputs', estimation.inverter_info.no_of_mppt_ports],
+                  estimation.inverter_info.max_strings_per_mppt && ['Strings / MPPT', estimation.inverter_info.max_strings_per_mppt],
+                  estimation.inverter_info.ip_rating && ['IP Rating', estimation.inverter_info.ip_rating],
+                  estimation.inverter_info.warranty && ['Warranty', `${estimation.inverter_info.warranty} years`],
+                ].filter(Boolean).map(([k, v], i) => (
+                  <div key={i} className="flex justify-between"><span className="text-gray-400">{k}</span><span className="font-semibold text-gray-700">{v}</span></div>
+                ))}
               </div>
             ) : estimation.inverter_combos?.[0]?.model ? (
-              <div className="space-y-1 text-sm text-gray-600">
-                <div className="flex justify-between"><span>Quantity</span><span className="font-semibold text-gray-800">{estimation.inverter_combos[0].qty || 1} unit</span></div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-gray-400">Quantity</span><span className="font-semibold text-gray-700">{estimation.inverter_combos[0].qty || 1} unit</span></div>
                 <p className="text-xs text-gray-400 italic mt-2">Full specs not available</p>
               </div>
-            ) : (
-              <p className="text-sm text-gray-400 italic">Inverter data not available</p>
-            )}
+            ) : <p className="text-sm text-gray-400 italic">Inverter data not available</p>}
           </div>
-          
+
           {/* Mounting */}
-          <div className="border border-amber-200 rounded-lg p-5 bg-gradient-to-br from-amber-50 to-white">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-amber-600 flex items-center justify-center">
+          <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center shadow-md shadow-slate-300">
                 <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-16 0H3" /></svg>
               </div>
               <div>
-                <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide">Mounting Structure</p>
-                <p className="text-lg font-bold text-gray-800">Aluminum Mounting Rails</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mounting Structure</p>
+                <p className="text-base font-bold text-gray-900">Aluminum Mounting Rails</p>
               </div>
             </div>
-            <div className="space-y-1 text-sm text-gray-600">
-              <div className="flex justify-between"><span>Material</span><span className="font-semibold text-gray-800">Anodized Aluminum (6005-T5)</span></div>
-              <div className="flex justify-between"><span>Source</span><span className="font-semibold text-gray-800">Moroccan-sourced</span></div>
-              <div className="flex justify-between"><span>Installation</span><span className="font-semibold text-gray-800">{estimation.roof_type || estimation.roof_type_detected || 'Flat'} Roof — {estimation.installation_type || 'Rooftop'}</span></div>
-              <div className="flex justify-between"><span>Orientation</span><span className="font-semibold text-gray-800">{estimation.panel_orientation || 'Portrait'}</span></div>
-              {estimation.mounting_structure_cost && (
-                <div className="flex justify-between"><span>Est. Cost</span><span className="font-semibold text-gray-800">{formatMAD(estimation.mounting_structure_cost)}</span></div>
-              )}
-              <div className="flex justify-between"><span>Wind Rating</span><span className="font-semibold text-gray-800">Up to 130 km/h</span></div>
+            <div className="space-y-2 text-sm">
+              {[
+                ['Material', 'Anodized Aluminum (6005-T5)'],
+                ['Source', 'Moroccan-sourced'],
+                ['Installation', `${estimation.roof_type || estimation.roof_type_detected || 'Flat'} Roof  ${estimation.installation_type || 'Rooftop'}`],
+                ['Orientation', estimation.panel_orientation || 'Portrait'],
+                estimation.mounting_structure_cost && ['Est. Cost', formatMAD(estimation.mounting_structure_cost)],
+                ['Wind Rating', 'Up to 130 km/h'],
+              ].filter(Boolean).map(([k, v], i) => (
+                <div key={i} className="flex justify-between"><span className="text-gray-400">{k}</span><span className="font-semibold text-gray-700">{v}</span></div>
+              ))}
             </div>
           </div>
-          
+
           {/* Cabling */}
-          <div className="border border-slate-200 rounded-lg p-5 bg-gradient-to-br from-slate-50 to-white">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-slate-600 flex items-center justify-center">
+          <div className="border border-gray-200 rounded-xl p-5 bg-gray-50/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-gray-500 to-gray-700 flex items-center justify-center shadow-md shadow-gray-300">
                 <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
               </div>
               <div>
-                <p className="text-xs text-slate-600 font-semibold uppercase tracking-wide">DC Cabling</p>
-                <p className="text-lg font-bold text-gray-800">4mm² Solar Cable</p>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">DC Cabling</p>
+                <p className="text-base font-bold text-gray-900">4mm2 Solar Cable</p>
               </div>
             </div>
-            <div className="space-y-1 text-sm text-gray-600">
-              <div className="flex justify-between"><span>Cross Section</span><span className="font-semibold text-gray-800">4 mm²</span></div>
-              <div className="flex justify-between"><span>Type</span><span className="font-semibold text-gray-800">UV-resistant, double-insulated</span></div>
-              <div className="flex justify-between"><span>Voltage Rating</span><span className="font-semibold text-gray-800">1000V DC (TÜV certified)</span></div>
-              <div className="flex justify-between"><span>Temperature Range</span><span className="font-semibold text-gray-800">-40°C to +90°C</span></div>
-              <div className="flex justify-between"><span>Connectors</span><span className="font-semibold text-gray-800">MC4 compatible</span></div>
+            <div className="space-y-2 text-sm">
+              {[
+                ['Cross Section', '4 mm2'],
+                ['Type', 'UV-resistant, double-insulated'],
+                ['Voltage Rating', '1000V DC (TUV certified)'],
+                ['Temperature Range', '-40 deg C to +90 deg C'],
+                ['Connectors', 'MC4 compatible'],
+              ].map(([k, v], i) => (
+                <div key={i} className="flex justify-between"><span className="text-gray-400">{k}</span><span className="font-semibold text-gray-700">{v}</span></div>
+              ))}
             </div>
           </div>
         </div>
       </div>
-      
+
       {/* Monthly Production Chart */}
-      <div className="bg-white shadow rounded-lg p-6" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Monthly Energy Production</h2>
-        <div style={{ height: '350px' }}>
-          <canvas ref={monthlyChartRef}></canvas>
-        </div>
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
+        <h2 className="text-lg font-bold text-gray-900 mb-4">Monthly Energy Production</h2>
+        <div style={{ height: '350px' }}><canvas ref={monthlyChartRef}></canvas></div>
       </div>
-      
-      {/* Comparison and Lifetime Performance */}
+
+      {/* Comparison + Lifetime Charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6" style={{ pageBreakBefore: 'always' }}>
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Monthly Energy Comparison</h3>
-          <div style={{ height: '300px' }}>
-            <canvas ref={comparisonChartRef}></canvas>
-          </div>
-          <p className="text-sm text-gray-600 mt-3">
-            The chart compares your expected solar production with your current energy consumption pattern.
-          </p>
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+          <h3 className="text-sm font-bold text-gray-700 mb-4">Monthly Energy Comparison</h3>
+          <div style={{ height: '300px' }}><canvas ref={comparisonChartRef}></canvas></div>
+          <p className="text-xs text-gray-400 mt-3">Solar production vs. current consumption pattern.</p>
         </div>
-        
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Lifetime Performance</h3>
-          <div style={{ height: '300px' }}>
-            <canvas ref={lifetimeChartRef}></canvas>
-          </div>
-          <p className="text-sm text-gray-600 mt-3">
-            This chart shows the projected system performance over 25 years, accounting for the standard 0.5% annual degradation rate.
-          </p>
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+          <h3 className="text-sm font-bold text-gray-700 mb-4">Lifetime Performance</h3>
+          <div style={{ height: '300px' }}><canvas ref={lifetimeChartRef}></canvas></div>
+          <p className="text-xs text-gray-400 mt-3">25-year projection with 0.5% annual degradation.</p>
         </div>
       </div>
-      
+
       {/* System Loss Diagram */}
-      <div className="bg-white shadow rounded-lg p-6" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
-        <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">System Loss Diagram</h2>
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6" style={{ pageBreakBefore: 'always', pageBreakInside: 'avoid' }}>
+        <h2 className="text-lg font-bold text-gray-900 mb-4 text-center">System Loss Diagram</h2>
         <div className="mx-auto" style={{ maxWidth: '950px', height: '300px' }}>
           <canvas ref={lossChartRef}></canvas>
         </div>
-        {/* Footnote strip */}
-        <div className="mt-4 pt-3 border-t border-blue-100 flex flex-wrap gap-x-6 gap-y-1">
+        <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap gap-x-6 gap-y-1">
           {[
             'Calculations are estimates and may vary by weather conditions.',
             'System efficiency degrades ~0.5% per year.',
             'Financial returns assume stable energy rates.',
             'Actual production depends on shading & maintenance.',
           ].map((note, i) => (
-            <span key={i} className="text-xs text-blue-500 flex items-start gap-1">
-              <span className="mt-0.5 text-blue-400">•</span>{note}
-            </span>
+            <span key={i} className="text-xs text-gray-400 flex items-start gap-1"><span className="mt-0.5 text-slate-400">*</span>{note}</span>
           ))}
         </div>
       </div>
-      
-      {/* Actions Footer */}
+
+      {/* Footer Actions */}
       <div className="flex justify-between items-center pt-4 border-t border-gray-200 no-print">
-        <Link to="/estimations" className="text-blue-600 hover:underline flex items-center gap-2">
-          <ArrowLeft className="w-5 h-5" />
-          Back to Estimations
+        <Link to="/estimations" className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium text-sm transition-all">
+          <ArrowLeft className="w-4 h-4" /> Back to Estimations
         </Link>
       </div>
     </div>

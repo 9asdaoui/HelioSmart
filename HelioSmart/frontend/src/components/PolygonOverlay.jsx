@@ -169,7 +169,7 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
 
   if (!visualization) {
     return (
-      <div className="flex items-center justify-center h-96 bg-gray-100 rounded-lg">
+      <div className="flex items-center justify-center h-96 bg-white/[0.03] rounded-lg border border-white/10">
         <p className="text-gray-500">No visualization data available</p>
       </div>
     )
@@ -189,7 +189,7 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
     <div className="space-y-4">
       {/* Captured Image with Polygon Overlays */}
       <div className="relative">
-        <div className="rounded-lg shadow-lg border-2 border-gray-300 overflow-hidden bg-gray-100">
+        <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
           {capturedImage ? (
             <canvas
               ref={canvasRef}
@@ -264,9 +264,9 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
           </div>
         )}
 
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <p className="text-sm text-gray-600 font-semibold">Obstacles Detected</p>
-          <p className="text-2xl font-bold text-gray-700">
+        <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+          <p className="text-sm text-red-600 font-semibold">Obstacles Detected</p>
+          <p className="text-2xl font-bold text-red-700">
             {obstacles?.length || 0}
           </p>
         </div>
@@ -282,9 +282,9 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
       </div>
 
       {/* Location Info */}
-      <div className="bg-gray-50 p-4 rounded-lg border">
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
         <div className="flex justify-between items-center">
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-gray-500">
             <p className="font-semibold text-gray-800 mb-1">📍 Captured Location</p>
             <p>Latitude: {center_lat?.toFixed(6) || 'N/A'}</p>
             <p>Longitude: {center_lng?.toFixed(6) || 'N/A'}</p>
@@ -297,7 +297,7 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
             {onReject && (
               <button
                 onClick={onReject}
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
+                className="px-6 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition font-medium"
               >
                 ← Retry Estimation
               </button>
@@ -305,7 +305,7 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
             {onApprove && (
               <button
                 onClick={onApprove}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-bold"
+                className="px-6 py-2 bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-lg hover:from-emerald-400 hover:to-green-400 transition shadow-md shadow-emerald-200 font-bold"
               >
                 ✓ Approve & View Results
               </button>

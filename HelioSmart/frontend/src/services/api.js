@@ -9,6 +9,15 @@ export const api = axios.create({
   },
 })
 
+// Attach JWT on every request when available
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('hs_token')
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  }
+  return config
+})
+
 // Estimations
 export const estimationsAPI = {
   getAll: (params) => api.get('/estimations', { params }),
@@ -121,4 +130,59 @@ export const chatbotAPI = {
   },
   getSessionInfo: (sessionId) => api.get(`/chatbot/session/${sessionId}`),
   clearSession: (sessionId) => api.delete(`/chatbot/session/${sessionId}`),
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+export const authAPI = {
+  register: (data) => api.post('/auth/register', data),
+  login: (data) => api.post('/auth/login', data),
+  me: () => api.get('/auth/me'),
+}
+
+// ─── Vendor portal (requires vendor/admin JWT) ──────────────────────────────
+export const vendorAPI = {
+  // Profile
+  getProfile: () => api.get('/vendor/profile'),
+  updateProfile: (params) => api.patch('/vendor/profile', null, { params }),
+
+  // Panels
+  createPanel: (data) => api.post('/vendor/panels', data),
+  listPanels: (params) => api.get('/vendor/panels', { params }),
+  getPanel: (id) => api.get(`/vendor/panels/${id}`),
+  updatePanel: (id, data) => api.put(`/vendor/panels/${id}`, data),
+  deletePanel: (id) => api.delete(`/vendor/panels/${id}`),
+
+  // Inverters
+  createInverter: (data) => api.post('/vendor/inverters', data),
+  listInverters: (params) => api.get('/vendor/inverters', { params }),
+  getInverter: (id) => api.get(`/vendor/inverters/${id}`),
+  updateInverter: (id, data) => api.put(`/vendor/inverters/${id}`, data),
+  deleteInverter: (id) => api.delete(`/vendor/inverters/${id}`),
+
+  // Admin actions
+  approvePanel: (id) => api.patch(`/vendor/admin/panels/${id}/approve`),
+  rejectPanel: (id) => api.patch(`/vendor/admin/panels/${id}/reject`),
+  approveInverter: (id) => api.patch(`/vendor/admin/inverters/${id}/approve`),
+  rejectInverter: (id) => api.patch(`/vendor/admin/inverters/${id}/reject`),
+
+  // AI Catalog Extraction
+  aiExtract: ({ text, file } = {}) => {
+    const form = new FormData()
+    if (text) form.append('text', text)
+    if (file) form.append('file', file)
+    return api.post('/vendor/ai-extract', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  aiBulkImport: (products) => api.post('/vendor/ai-bulk-import', products),
+}
+
+// ─── Public marketplace (no auth) ────────────────────────────────────────────
+export const marketplaceAPI = {
+  getPanels: (params) => api.get('/marketplace/panels', { params }),
+  getPanel: (id) => api.get(`/marketplace/panels/${id}`),
+  getInverters: (params) => api.get('/marketplace/inverters', { params }),
+  getInverter: (id) => api.get(`/marketplace/inverters/${id}`),
+  getVendors: (params) => api.get('/marketplace/vendors', { params }),
+  getVendorProfile: (id) => api.get(`/marketplace/vendors/${id}`),
 }
