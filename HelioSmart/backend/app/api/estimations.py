@@ -64,7 +64,7 @@ def get_estimation(estimation_id: int, db: Session = Depends(get_db)):
     json_fields = ['monthly_usage', 'monthly_cost', 'dc_monthly', 'poa_monthly', 
                    'solrad_monthly', 'ac_monthly', 'roof_polygon', 'usable_polygon',
                    'sam_masks', 'panel_grid', 'panel_positions', 'inverter_design',
-                   'inverter_combos', 'stringing_details']
+                   'inverter_combos', 'stringing_details', 'loss_breakdown']
     
     for field in json_fields:
         value = getattr(estimation, field, None)

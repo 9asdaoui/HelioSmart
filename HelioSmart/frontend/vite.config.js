@@ -1,13 +1,14 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'path'
+import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      // ESM-safe alias — avoids __dirname being undefined with "type":"module"
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
   server: {

@@ -5,6 +5,46 @@ import { estimationsAPI, utilitiesAPI } from '@/services/api'
 import PolygonOverlay from '@/components/PolygonOverlay'
 import html2canvas from 'html2canvas'
 
+/**
+ * Calculate distance between two lat/lng points using Haversine formula
+ * Returns distance in meters
+ */
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000 // Earth's radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c
+}
+
+/**
+ * Calculate ACTUAL meters per pixel from Google Maps bounds
+ * This is the most accurate method - uses real map bounds, not formulas
+ */
+function calculateActualScale(map, mapDivWidth, html2canvasScale = 2) {
+  if (!map) return null
+  
+  const bounds = map.getBounds()
+  if (!bounds) return null
+  
+  const ne = bounds.getNorthEast()
+  const sw = bounds.getSouthWest()
+  
+  // Calculate horizontal distance across the map in meters
+  const horizontalMeters = haversineDistance(
+    (ne.lat() + sw.lat()) / 2, sw.lng(),  // West point at center latitude
+    (ne.lat() + sw.lat()) / 2, ne.lng()   // East point at center latitude
+  )
+  
+  // Actual pixels in captured image (html2canvas doubles resolution)
+  const actualPixelWidth = mapDivWidth * html2canvasScale
+  
+  return horizontalMeters / actualPixelWidth
+}
+
 export default function CreateEstimation() {
   const navigate = useNavigate()
   const [currentStep, setCurrentStep] = useState(1)
@@ -27,6 +67,8 @@ export default function CreateEstimation() {
   const [searchQuery, setSearchQuery] = useState('')
   const [capturedRoofImage, setCapturedRoofImage] = useState(null)
   const [isCapturing, setIsCapturing] = useState(false)
+  const [capturedZoomLevel, setCapturedZoomLevel] = useState(null) // Store zoom at capture time
+  const [capturedScale, setCapturedScale] = useState(null) // Store actual m/pixel scale at capture time
   
   const mapRef = useRef(null)
   const captureBoxRef = useRef(null)
@@ -76,7 +118,7 @@ export default function CreateEstimation() {
       
       const newMap = new window.google.maps.Map(mapRef.current, {
         center: mapCenter,
-        zoom: 18,
+        zoom: 20,  // Higher zoom for accurate roof capture
         mapTypeId: 'satellite',
         tilt: 0,
         heading: 0,
@@ -109,7 +151,7 @@ export default function CreateEstimation() {
       
       const location = response.geometry.location
       map.setCenter(location)
-      map.setZoom(19)
+      map.setZoom(20)  // Consistent with initial zoom
       setMapCenter({ lat: location.lat(), lng: location.lng() })
     } catch (error) {
       console.error('Search failed:', error)
@@ -157,9 +199,41 @@ export default function CreateEstimation() {
       // 4. Convert to base64
       const imageBase64 = croppedCanvas.toDataURL('image/png')
       setCapturedRoofImage(imageBase64)
-      console.log('Captured roof image:', imageBase64.substring(0, 100) + '...')
       
-      // 5. Get address data via geocoding
+      // 5. Calculate ACTUAL scale using map bounds and the real pixel width of the captured image
+      const currentZoom = map.getZoom()
+      setCapturedZoomLevel(currentZoom)
+      
+      const bounds = map.getBounds()
+      if (bounds) {
+        const ne = bounds.getNorthEast()
+        const sw = bounds.getSouthWest()
+        const centerLat = (ne.lat() + sw.lat()) / 2
+        
+        // W_meters: real-world width of the FULL map (NW→NE)
+        const fullMapMeters = haversineDistance(centerLat, sw.lng(), centerLat, ne.lng())
+        
+        // W_pixels of the FULL captured image (html2canvas scale:2 already doubles it — canvas.width === mapDivWidth * 2)
+        const fullImagePixels = mapWidth  // canvas.width, already 2x the DOM width
+        
+        // The cropped box is 40% of the full image width both in pixels and in meters
+        const captureBoxPixels = boxWidth   // boxWidth = mapWidth * 0.4
+        const captureBoxMeters = fullMapMeters * 0.4
+        
+        // scale_meters_per_pixel = W_meters / W_pixels  (image-width-based, not screen-div-based)
+        const actualScale = captureBoxMeters / captureBoxPixels
+        setCapturedScale(actualScale)
+        
+        console.log(`📐 FINAL CALIBRATED SCALE: ${actualScale.toFixed(6)} m/px`)
+        console.log(`   Map bounds span: ${fullMapMeters.toFixed(1)} m across ${fullImagePixels} px (full image)`)
+        console.log(`   Capture box:     ${captureBoxMeters.toFixed(1)} m across ${captureBoxPixels} px`)
+        console.log(`   Image covers:    ${(captureBoxPixels * actualScale).toFixed(1)} m × ${(boxHeight * actualScale).toFixed(1)} m`)
+        console.log(`   Total image area: ${(captureBoxPixels * actualScale * boxHeight * actualScale).toFixed(0)} m²`)
+      }
+      
+      console.log(`📸 Captured roof image at zoom ${currentZoom}`)
+      
+      // 6. Get address data via geocoding
       const response = await new Promise((resolve, reject) => {
         geocoder.geocode({ location }, (results, status) => {
           if (status === 'OK' && results[0]) resolve(results[0])
@@ -312,8 +386,25 @@ export default function CreateEstimation() {
       
       // Satellite image from capture
       satellite_image: capturedRoofImage,
-      scale_meters_per_pixel: 0.3, // Approximate scale
-      zoom_level: map?.getZoom() || 18,
+      // Use the ACTUAL scale derived from map bounds + real image pixel width at capture time
+      scale_meters_per_pixel: (() => {
+        if (capturedScale) {
+          console.log(`📐 FINAL CALIBRATED SCALE: ${capturedScale.toFixed(6)} m/px (bounds-based, image-width corrected)`)
+          return capturedScale
+        }
+        // Fallback: OSM tile-size formula — less accurate but never NaN
+        const lat = selectedLocation?.latitude || mapCenter.lat
+        const zoom = capturedZoomLevel || map?.getZoom() || 20
+        // Full-image scale (html2canvas scale:2 doubles pixel count)
+        const fullScale = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom) / 2
+        // Capture box is 40% of the image, so scale is the same (pixels and meters both shrink equally)
+        console.log(`⚠️ FALLBACK SCALE: ${fullScale.toFixed(6)} m/px (no captured bounds — re-capture recommended)`)
+        return fullScale
+      })(),
+      zoom_level: capturedZoomLevel || map?.getZoom() || 20,
+      
+      // Roof points from Step 5 (used as SAM prompts)
+      roof_points: placedPoints.map(p => ({ x: p.x, y: p.y })),
       
       // Energy usage
       monthly_bill: annualCost / 12,
@@ -622,13 +713,13 @@ export default function CreateEstimation() {
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-5 mb-4">
                   <p className="text-base text-blue-900 font-bold mb-3">📋 Instructions:</p>
                   <ol className="text-sm text-blue-800 space-y-2 list-decimal list-inside">
-                    <li className="font-medium">Click inside the <span className="text-indigo-600 font-bold">rectangular roof box</span> on the right</li>
-                    <li>Mark the corners and key points of your roof area</li>
-                    <li>Place up to <span className="font-bold">6 points</span> to outline your roof</li>
-                    <li className="text-red-700 font-semibold">⚠️ IMPORTANT: Only click inside the box - this represents your captured roof image</li>
+                    <li className="font-medium">Click on the <span className="text-indigo-600 font-bold">roof area</span> in your captured image</li>
+                    <li>Mark points <span className="font-bold">on your roof</span> to help our AI identify it accurately</li>
+                    <li>Place up to <span className="font-bold">6 points</span> on different parts of the roof</li>
+                    <li className="text-green-700 font-semibold">✨ These points guide our AI to detect your exact roof boundaries</li>
                   </ol>
                   <div className="mt-3 bg-white rounded p-3 border border-blue-200">
-                    <p className="text-xs text-gray-700"><span className="font-semibold">💡 Tip:</span> These points will help our AI detect the exact roof boundaries and calculate optimal panel placement.</p>
+                    <p className="text-xs text-gray-700"><span className="font-semibold">🎯 Tip:</span> Place points in different corners and areas of your roof for the best AI detection results.</p>
                   </div>
                 </div>
                 <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
@@ -781,14 +872,20 @@ export default function CreateEstimation() {
                 <h3 className="font-semibold text-blue-900 mb-2">Visual Transparency</h3>
                 <p className="text-sm text-blue-800">
                   Below you can see exactly what our AI detected on your roof. 
-                  The <span className="font-semibold text-green-600">green area</span> shows usable space for solar panels, 
-                  and <span className="font-semibold text-red-600">red markers</span> indicate obstacles.
+                  The <span className="font-semibold text-green-600">green area</span> shows usable space for solar panels
+                  {visualizationData?.panel_positions?.length > 0 && (
+                    <span>, and the <span className="font-semibold text-orange-500">orange rectangles</span> show the optimal panel placement</span>
+                  )}
+                  {visualizationData?.obstacles?.length > 0 && (
+                    <span>. <span className="font-semibold text-red-600">Red markers</span> indicate obstacles</span>
+                  )}.
                 </p>
               </div>
               
               <PolygonOverlay 
                 visualization={visualizationData}
                 capturedImage={capturedRoofImage}
+                panelPositions={visualizationData?.panel_positions}
                 onApprove={() => {
                   if (estimationId) {
                     navigate(`/estimations/${estimationId}`)

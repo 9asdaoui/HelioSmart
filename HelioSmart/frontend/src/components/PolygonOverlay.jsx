@@ -3,14 +3,15 @@ import PropTypes from 'prop-types'
 
 /**
  * PolygonOverlay Component
- * Displays SAM service polygon detection results
+ * Displays SAM service polygon detection results and panel placements
  * Shows captured satellite image with polygon overlays drawn on canvas
  */
-export default function PolygonOverlay({ visualization, capturedImage, onApprove, onReject }) {
+export default function PolygonOverlay({ visualization, capturedImage, onApprove, onReject, panelPositions }) {
   const canvasRef = useRef(null)
   const [imageLoaded, setImageLoaded] = useState(false)
+  const [showPanels, setShowPanels] = useState(true)
 
-  // Draw polygons on the captured image
+  // Draw polygons and panels on the captured image
   useEffect(() => {
     if (!canvasRef.current || !capturedImage) return
 
@@ -89,11 +90,41 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
         })
       }
 
+      // Draw panel placements (yellow/orange) if available and enabled
+      if (showPanels && panelPositions && panelPositions.length > 0) {
+        ctx.strokeStyle = '#f97316'  // Orange
+        ctx.lineWidth = 1.5
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.6)'  // Yellow with transparency
+
+        panelPositions.forEach((panel, index) => {
+          if (panel.corners && panel.corners.length >= 4) {
+            ctx.beginPath()
+            ctx.moveTo(panel.corners[0][0], panel.corners[0][1])
+            for (let i = 1; i < panel.corners.length; i++) {
+              ctx.lineTo(panel.corners[i][0], panel.corners[i][1])
+            }
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+
+            // Optionally draw panel number
+            if (panel.center_x && panel.center_y) {
+              ctx.fillStyle = '#1f2937'  // Dark gray text
+              ctx.font = 'bold 10px Arial'
+              ctx.textAlign = 'center'
+              ctx.textBaseline = 'middle'
+              ctx.fillText(String(panel.id || index + 1), panel.center_x, panel.center_y)
+              ctx.fillStyle = 'rgba(251, 191, 36, 0.6)'  // Reset fill color
+            }
+          }
+        })
+      }
+
       setImageLoaded(true)
     }
 
     img.src = capturedImage
-  }, [capturedImage, visualization])
+  }, [capturedImage, visualization, panelPositions, showPanels])
 
   if (!visualization) {
     return (
@@ -147,26 +178,50 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
               <div className="w-4 h-4 bg-red-500 opacity-40 border-2 border-red-500 rounded"></div>
               <span>Obstacles</span>
             </div>
+            {panelPositions && panelPositions.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="showPanels"
+                  checked={showPanels}
+                  onChange={(e) => setShowPanels(e.target.checked)}
+                  className="rounded"
+                />
+                <div className="w-4 h-4 bg-yellow-400 opacity-60 border-2 border-orange-500 rounded"></div>
+                <label htmlFor="showPanels" className="cursor-pointer">
+                  Panels ({panelPositions.length})
+                </label>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Area Information */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Area and Panel Information */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-          <p className="text-sm text-blue-600 font-semibold">Estimated Roof Area</p>
+          <p className="text-sm text-blue-600 font-semibold">Usable Area</p>
           <p className="text-2xl font-bold text-blue-700">
             {formatArea(usable_area_m2)}
           </p>
         </div>
 
-        <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-          <p className="text-sm text-green-600 font-semibold">Usable for Panels</p>
-          <p className="text-2xl font-bold text-green-700">
-            {formatArea(usable_area_m2 ? usable_area_m2 * 0.8 : null)}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">~80% of roof area</p>
-        </div>
+        {panelPositions && panelPositions.length > 0 ? (
+          <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+            <p className="text-sm text-orange-600 font-semibold">Panels Placed</p>
+            <p className="text-2xl font-bold text-orange-700">
+              {panelPositions.length}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+            <p className="text-sm text-green-600 font-semibold">Usable for Panels</p>
+            <p className="text-2xl font-bold text-green-700">
+              {formatArea(usable_area_m2 ? usable_area_m2 * 0.8 : null)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">~80% of roof area</p>
+          </div>
+        )}
 
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
           <p className="text-sm text-gray-600 font-semibold">Obstacles Detected</p>
@@ -174,6 +229,15 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
             {obstacles?.length || 0}
           </p>
         </div>
+
+        {visualization?.coverage_percentage && (
+          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+            <p className="text-sm text-green-600 font-semibold">Coverage</p>
+            <p className="text-2xl font-bold text-green-700">
+              {visualization.coverage_percentage.toFixed(1)}%
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Location Info */}
@@ -223,8 +287,19 @@ PolygonOverlay.propTypes = {
     center_lng: PropTypes.number,
     sam_mode: PropTypes.oneOf(['production', 'fallback', 'placeholder']),
     sam_warning: PropTypes.string,
+    coverage_percentage: PropTypes.number,
   }),
   capturedImage: PropTypes.string,
   onApprove: PropTypes.func,
   onReject: PropTypes.func,
+  panelPositions: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.number,
+      center_x: PropTypes.number,
+      center_y: PropTypes.number,
+      corners: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)),
+      row: PropTypes.number,
+      column: PropTypes.number,
+    })
+  ),
 }

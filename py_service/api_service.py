@@ -385,34 +385,70 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
     cut_out_image = image_rgb.copy()
     cut_out_image[~best_mask] = 0
     
-    # Step 6: Apply zoom (no zoom in this case)
+    # Step 6: Apply zoom (only if zoom_level > 0)
+    # BUG FIX: When zoom_level = 0, do NOT crop+resize — that "zoom to bounding box" operation
+    # inflates the apparent mask coverage (28% → 60%+) and causes 2-3x area overcount.
     zoom_level = 0.0
-    x_range = x_max - x_min
-    y_range = y_max - y_min
-    zoom_x_min = max(int(x_min + x_range * zoom_level), 0)
-    zoom_x_max = min(int(x_max - x_range * zoom_level), cut_out_image.shape[1])
-    zoom_y_min = max(int(y_min + y_range * zoom_level), 0)
-    zoom_y_max = min(int(y_max - y_range * zoom_level), cut_out_image.shape[0])
+    if zoom_level > 0:
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+        zoom_x_min = max(int(x_min + x_range * zoom_level), 0)
+        zoom_x_max = min(int(x_max - x_range * zoom_level), cut_out_image.shape[1])
+        zoom_y_min = max(int(y_min + y_range * zoom_level), 0)
+        zoom_y_max = min(int(y_max - y_range * zoom_level), cut_out_image.shape[0])
+        zoomed_section = cut_out_image[zoom_y_min:zoom_y_max, zoom_x_min:zoom_x_max]
+        zoomed_section_resized = cv2.resize(
+            zoomed_section,
+            (cut_out_image.shape[1], cut_out_image.shape[0]),
+            interpolation=cv2.INTER_LINEAR
+        )
+        cut_out_image = zoomed_section_resized
+        print(f"   🔍 Zoom applied: cropped {zoom_x_max-zoom_x_min}×{zoom_y_max-zoom_y_min} → {cut_out_image.shape[1]}×{cut_out_image.shape[0]}")
+    # else: cut_out_image stays at original resolution with non-roof pixels = black
     
-    zoomed_section = cut_out_image[zoom_y_min:zoom_y_max, zoom_x_min:zoom_x_max]
-    zoomed_section_resized = cv2.resize(zoomed_section, (cut_out_image.shape[1], cut_out_image.shape[0]), interpolation=cv2.INTER_LINEAR)
-    cut_out_image = zoomed_section_resized
-    
-    # Step 7: Automatic mask generation
+    # Step 7: Automatic mask generation on the cut-out image
+    # The cut_out still has non-roof pixels = black, so mask_generator works on the
+    # correct spatial scale. The largest generated mask = main roof surface.
     masks = mask_generator.generate(cut_out_image)
     colors, sorted_masks = show_anns(masks)
     
-    # Step 8: Process masks
-    first_mask_cut = None
-    if len(sorted_masks) > 0:
-        first_mask = sorted_masks[0]
-        combined_other_masks = np.zeros_like(first_mask['segmentation'], dtype=bool)
-        
-        for i, mask in enumerate(sorted_masks):
-            if i != 0:
-                combined_other_masks |= mask['segmentation']
-        
-        first_mask_cut = first_mask['segmentation'] & ~combined_other_masks
+    # Step 8: Build the usable roof mask
+    # ─────────────────────────────────────────────────────────────────────────
+    # BUG FIX: On a cut-out image (non-roof pixels = black), mask_generator
+    # treats the large black background as the single biggest region →
+    # sorted_masks[0] IS the background, NOT the roof.
+    #
+    # Correct approach:
+    #   • Use best_mask (from predictor, Step 4) as the authoritative roof shape.
+    #   • Use mask_generator sub-masks that overlap significantly with best_mask
+    #     as obstacle candidates (sub-features on the roof surface).
+    # ─────────────────────────────────────────────────────────────────────────
+    best_mask_pixels = best_mask.sum()
+    best_coverage = best_mask_pixels / (h * w)
+    print(f"   🏠 Predictor roof mask: {best_coverage*100:.1f}% of image ({best_mask_pixels} px)")
+
+    # Obstacle candidates = sub-masks whose pixels are MOSTLY inside best_mask
+    obstacle_candidates = []
+    for mask_data in sorted_masks:
+        seg = mask_data['segmentation']
+        if seg.sum() == 0:
+            continue
+        overlap_ratio = (seg & best_mask).sum() / seg.sum()
+        seg_coverage  = seg.sum() / (h * w)
+        # Accept as an obstacle candidate if:
+        #   ≥60 % of its pixels lie inside the roof boundary (not background)
+        #   AND it doesn't cover the whole image (i.e. not the background itself)
+        if overlap_ratio >= 0.60 and seg_coverage < 0.40:
+            obstacle_candidates.append(mask_data)
+
+    print(f"   🔧 {len(obstacle_candidates)} sub-feature candidate(s) found inside roof boundary")
+
+    # Subtract all obstacle candidates from the roof to get clean usable area
+    obstacle_union = np.zeros_like(best_mask, dtype=bool)
+    for mask_data in obstacle_candidates:
+        obstacle_union |= mask_data['segmentation']
+
+    first_mask_cut = best_mask & ~obstacle_union
     
     # Step 9: Create JSON response data
     roof_data = {
@@ -459,15 +495,15 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
         roof_data["total_usable_area_pixels"] = total_usable_area_pixels
         roof_data["total_usable_area_m2"] = total_usable_area_pixels * (scale_meters_per_pixel ** 2)
     
-    # Process obstacles with minimum size filtering
-    # Filter out noise/texture by ignoring obstacles smaller than 0.5 m²
-    MIN_OBSTACLE_AREA_M2 = 0.5
-    
-    if len(sorted_masks) > 1:
+    # Process obstacles — strict noise filter to remove shadow/texture artefacts
+    # Rule: only keep obstacles ≥ 2.5 m² (real chimneys, AC units, skylights)
+    MIN_OBSTACLE_AREA_M2 = 2.5
+
+    if len(obstacle_candidates) > 0:
         total_obstacle_area_pixels = 0
         filtered_count = 0
-        
-        for i, mask_data in enumerate(sorted_masks[1:], 1):
+
+        for i, mask_data in enumerate(obstacle_candidates):
             obstacle_mask = mask_data['segmentation']
             obstacle_polygons = mask_to_polygon(obstacle_mask)
             
@@ -589,8 +625,36 @@ async def analyze_roof(
             except json.JSONDecodeError:
                 print("⚠️  Failed to parse roof_points JSON, ignoring")
         
-        # Process image using the same workflow as notebook
-        result = process_image_workflow(image_array, center_lat, center_lng, scale_meters_per_pixel, parsed_points)
+        # ── Scale calibration ─────────────────────────────────────────────────
+        # The frontend captures with html2canvas scale:2, which doubles the pixel
+        # density relative to the geographic bounds calculation.  Dividing by 2
+        # corrects the 4× area inflation (area ∝ scale²).
+        SCALE_CORRECTION = 2.0
+        effective_scale = scale_meters_per_pixel / SCALE_CORRECTION
+
+        # Debug logging
+        print(f"\n🔍 SCALE DEBUG:")
+        print(f"   Browser scale (raw):      {scale_meters_per_pixel:.6f} m/px")
+        print(f"   Effective scale (÷{SCALE_CORRECTION}):   {effective_scale:.6f} m/px")
+        image_w = image_array.shape[1]
+        image_h = image_array.shape[0]
+        image_area_pixels = image_w * image_h
+        total_image_m2 = (image_w * effective_scale) * (image_h * effective_scale)
+        print(f"   Image size: {image_w}×{image_h} px  →  {image_w*effective_scale:.1f}m × {image_h*effective_scale:.1f}m")
+        print(f"   Total image area: {total_image_m2:.1f} m²  (expected < 600 m² for a house view)")
+        if total_image_m2 > 1000:
+            print(f"   ⚠️  Still large — consider re-capturing at zoom 20")
+        else:
+            print(f"   ✅ Image footprint looks correct for a house-level view")
+
+        # Process image using the corrected scale
+        result = process_image_workflow(image_array, center_lat, center_lng, effective_scale, parsed_points)
+        
+        # Log the detected area
+        total_area = result.get("total_usable_area_m2", 0)
+        total_pixels = result.get("total_usable_area_pixels", 0)
+        print(f"   Detected usable area: {total_pixels:.0f} px² = {total_area:.1f} m²")
+        print(f"   Coverage: {(total_pixels/image_area_pixels*100):.1f}% of image\n")
         
         # Add warning if using fallback mode
         if not model_loaded:

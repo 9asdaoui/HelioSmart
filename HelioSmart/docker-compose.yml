@@ -60,8 +60,22 @@ services:
     environment:
       - NODE_ENV=production
 
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: heliosmart-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_ORIGINS=*
+
 volumes:
   postgres_data:
+    driver: local
+  ollama_data:
     driver: local
 
 networks:

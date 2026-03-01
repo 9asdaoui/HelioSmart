@@ -22,7 +22,12 @@ export const estimationsAPI = {
     // Add all fields to FormData
     Object.keys(formData).forEach(key => {
       if (formData[key] !== null && formData[key] !== undefined) {
-        formDataObj.append(key, formData[key])
+        // JSON stringify arrays and objects (like roof_points)
+        if (Array.isArray(formData[key]) || (typeof formData[key] === 'object' && !(formData[key] instanceof File))) {
+          formDataObj.append(key, JSON.stringify(formData[key]))
+        } else {
+          formDataObj.append(key, formData[key])
+        }
       }
     })
     

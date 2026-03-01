@@ -65,8 +65,22 @@ services:
       - /app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
 
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: heliosmart-ollama-dev
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_ORIGINS=*
+
 volumes:
   postgres_data:
+    driver: local
+  ollama_data:
     driver: local
 
 networks:

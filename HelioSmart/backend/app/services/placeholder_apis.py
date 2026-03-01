@@ -104,6 +104,12 @@ class UsableAreaDetectionService:
                     "center_lng": options.get("center_lng", 0.0),
                     "scale_meters_per_pixel": options.get("meters_per_pixel", 0.3),
                 }
+                
+                # Add roof_points if provided (user-placed points from Step 5)
+                if options.get("roof_points"):
+                    import json
+                    data["roof_points"] = json.dumps(options.get("roof_points"))
+                    logger.info(f"Passing {len(options.get('roof_points'))} roof points to SAM service")
 
                 async with httpx.AsyncClient(timeout=180.0) as client:  # 3 minutes for SAM processing
                     response = await client.post(endpoint_url, files=files, data=data)
@@ -150,6 +156,12 @@ class UsableAreaDetectionService:
             usable_area_pixels = largest_area.get("area_pixels", 0.0)
             usable_area_m2 = largest_area.get("area_m2", 0.0)
         
+        # Extract image dimensions from SAM result
+        image_info = sam_result.get("image_info", {})
+        image_dims = image_info.get("dimensions", {})
+        image_width = image_dims.get("width", 640)
+        image_height = image_dims.get("height", 480)
+        
         # Build response in expected format
         transformed = {
             "usable_area": usable_area_pixels,
@@ -167,6 +179,8 @@ class UsableAreaDetectionService:
             "facade_filtering_applied": False,
             "meters_per_pixel": sam_result.get("georeferencing", {}).get("scale_meters_per_pixel", 
                                                                           options.get("meters_per_pixel", 0.3)),
+            "image_width": image_width,
+            "image_height": image_height,
             "_sam_service": True,  # Flag to indicate this came from SAM service
             "_fallback": sam_result.get("_fallback", False),  # Pass through fallback flag
         }
@@ -216,36 +230,105 @@ class PanelPlacementService:
             Dict with panel placement data or None if failed
         """
         try:
-            logger.warning("Using PLACEHOLDER for panel placement API")
-
-            # Calculate estimated panel count if not provided
-            if panel_count is None:
-                usable_area_m2 = usable_area_result.get("usable_area_m2", 50.0)
-                panel_area_m2 = (panel.get("width", 1.0) * panel.get("height", 2.0))
-                panel_count = int(usable_area_m2 / panel_area_m2 * 0.8)  # 80% efficiency
-
-            # Return placeholder data
-            return {
-                "panel_count": panel_count,
-                "panel_grid": {"rows": 5, "cols": 4, "total": panel_count},
-                "panel_positions": [
-                    {"x": i * 2, "y": j * 3, "rotation": 0}
-                    for i in range(4)
-                    for j in range(5)
-                ],
-                "panel_grid_image": None,  # Base64 image with grid
-                "visualization_image": None,  # Base64 image with 3D visualization
-                "coverage_percentage": 80.0,
-                "estimated_annual_production_kwh": panel_count
-                * panel.get("power", 400)
-                / 1000
-                * annual_irradiance,
-                "_placeholder": True,  # Flag to indicate this is placeholder data
-            }
+            # Try calling the actual Python panel placement service
+            panel_placement_url = f"{settings.PY_SERVICE_URL}/place_panels"
+            
+            result = await self.call_actual_api(
+                image_path,
+                usable_area_result,
+                panel,
+                lat,
+                lon,
+                roof_azimuth,
+                roof_tilt,
+                annual_irradiance,
+                panel_placement_url,
+                panel_spacing,
+                panel_count,
+            )
+            
+            if result and result.get("success"):
+                logger.info(f"Successfully called panel placement service. Panels placed: {result.get('panels_placed')}")
+                return self._transform_placement_response(result, panel, annual_irradiance)
+            else:
+                logger.warning("Panel placement service returned unsuccessful result, using placeholder")
+                return self._get_placeholder_response(usable_area_result, panel, panel_count, annual_irradiance)
 
         except Exception as e:
-            logger.error(f"Panel placement placeholder error: {str(e)}")
-            return None
+            logger.error(f"Panel placement error: {str(e)}")
+            return self._get_placeholder_response(usable_area_result, panel, panel_count, annual_irradiance)
+    
+    def _get_placeholder_response(
+        self, 
+        usable_area_result: Dict, 
+        panel: Dict, 
+        panel_count: Optional[int], 
+        annual_irradiance: float
+    ) -> Dict:
+        """Generate placeholder response when service is unavailable"""
+        logger.warning("Using PLACEHOLDER for panel placement API")
+        
+        # Calculate estimated panel count if not provided
+        if panel_count is None:
+            usable_area_m2 = usable_area_result.get("usable_area_m2", 50.0)
+            panel_area_m2 = (panel.get("width", 1.0) * panel.get("height", 2.0))
+            panel_count = int(usable_area_m2 / panel_area_m2 * 0.8)  # 80% efficiency
+
+        return {
+            "panel_count": panel_count,
+            "panel_grid": {"rows": 5, "cols": 4, "total": panel_count},
+            "panel_positions": [
+                {"x": i * 2, "y": j * 3, "rotation": 0}
+                for i in range(4)
+                for j in range(5)
+            ],
+            "panel_grid_image": None,
+            "visualization_image": None,
+            "coverage_percentage": 80.0,
+            "estimated_annual_production_kwh": panel_count
+            * panel.get("power", 400)
+            / 1000
+            * annual_irradiance,
+            "_placeholder": True,
+        }
+    
+    def _transform_placement_response(
+        self, 
+        result: Dict, 
+        panel: Dict, 
+        annual_irradiance: float
+    ) -> Dict:
+        """Transform panel placement API response to backend expected format"""
+        panels_placed = result.get("panels_placed", 0)
+        panel_positions = result.get("panel_positions", [])
+        
+        # Organize into grid structure
+        rows = result.get("row_count", 1)
+        panels_per_row = result.get("panels_per_row", [panels_placed])
+        cols = max(panels_per_row) if panels_per_row else 1
+        
+        return {
+            "panel_count": panels_placed,
+            "panel_grid": {
+                "rows": rows,
+                "cols": cols,
+                "total": panels_placed,
+                "panels_per_row": panels_per_row,
+            },
+            "panel_positions": panel_positions,
+            "panel_grid_image": None,  # Could be generated if needed
+            "visualization_image": None,  # Could be generated if needed
+            "coverage_percentage": result.get("coverage_percentage", 0),
+            "row_spacing_m": result.get("row_spacing_m", 0.3),
+            "usable_area_m2": result.get("usable_area_m2", 0),
+            "total_panel_area_m2": result.get("total_panel_area_m2", 0),
+            "estimated_annual_production_kwh": panels_placed
+            * panel.get("power", 400)
+            / 1000
+            * annual_irradiance,
+            "warnings": result.get("warnings", []),
+            "_placeholder": False,
+        }
 
     async def call_actual_api(
         self,
@@ -262,7 +345,7 @@ class PanelPlacementService:
         panel_count: Optional[int] = None,
     ) -> Optional[Dict]:
         """
-        Call the actual panel placement API (when available)
+        Call the actual panel placement API
 
         Args:
             (same as place_panels)
@@ -272,56 +355,60 @@ class PanelPlacementService:
             API response or None if failed
         """
         try:
-            if not os.path.exists(image_path):
-                raise ValueError(f"Image file does not exist: {image_path}")
-
-            # Prepare multipart form data
-            files = {"image": open(image_path, "rb")}
-
-            # Calculate roof area
-            roof_area = usable_area_result.get("roof_area", usable_area_result.get("usable_area", 0.0))
-
-            data = {
-                "roof_polygon": str(usable_area_result.get("roof_polygon", [])),
-                "obstacles": str(usable_area_result.get("obstacles", [])),
-                "usable_polygon": str(usable_area_result.get("usable_polygon", [])),
-                "usable_area": usable_area_result.get("usable_area", 0.0),
-                "roof_area": roof_area,
-                "panel_width": panel.get("width", 2.0),
-                "panel_height": panel.get("height", 1.0),
-                "panel_power": panel.get("power", 400),
-                "latitude": lat,
-                "longitude": lon,
-                "roof_azimuth": roof_azimuth,
-                "roof_tilt": roof_tilt,
-                "annual_irradiance": annual_irradiance,
-                "meters_per_pixel": usable_area_result.get("meters_per_pixel", 0.3),
-                "roof_type": usable_area_result.get("roof_type", "flat"),
+            # Get usable polygon from SAM detection result
+            usable_polygon = usable_area_result.get("usable_polygon", [])
+            if not usable_polygon or len(usable_polygon) < 3:
+                logger.warning("No valid usable polygon for panel placement")
+                return None
+            
+            # Get scale from SAM result
+            meters_per_pixel = usable_area_result.get("meters_per_pixel", 0.3)
+            
+            # Calculate target panel count if not provided
+            if panel_count is None:
+                usable_area_m2 = usable_area_result.get("usable_area_m2", 50.0)
+                panel_area_m2 = (panel.get("width", 1.0) * panel.get("height", 2.0))
+                panel_count = int(usable_area_m2 / panel_area_m2 * 0.8)  # 80% fill factor
+            
+            # Prepare JSON request body matching PlacementRequest model
+            # Get actual image dimensions from SAM result
+            image_width = usable_area_result.get("image_width", 640)
+            image_height = usable_area_result.get("image_height", 480)
+            
+            # Log key values for debugging panel sizing
+            logger.info(f"📐 Panel placement params: scale={meters_per_pixel:.4f} m/px, "
+                       f"panel={panel.get('width', 1.0):.2f}x{panel.get('height', 2.0):.2f}m, "
+                       f"image={image_width}x{image_height}")
+            
+            request_data = {
+                "usable_polygon": usable_polygon,
+                "panel_spec": {
+                    "width_mm": panel.get("width", 1.0) * 1000,  # Convert m to mm
+                    "height_mm": panel.get("height", 2.0) * 1000,  # Convert m to mm
+                    "rated_power_w": panel.get("power", 400),
+                },
+                "target_panel_count": panel_count,
+                "tilt_degrees": roof_tilt,
+                "azimuth_degrees": roof_azimuth,
+                "scale_meters_per_pixel": meters_per_pixel,
+                "image_width": image_width,
+                "image_height": image_height,
+                "center_lat": lat,
+                "center_lng": lon,
+                "min_edge_margin_m": 0.2,  # Reduced margin for more panel area
+                "row_spacing_mode": "tight",  # Dense packing for maximum panels
+                "orientation": "portrait",
             }
 
-            if panel_spacing:
-                data["panel_spacing"] = str(panel_spacing)
-
-            if panel_count is not None:
-                data["panel_count"] = panel_count
-
             async with httpx.AsyncClient() as client:
-                response = await client.post(endpoint_url, files=files, data=data, timeout=60.0)
+                response = await client.post(
+                    endpoint_url, 
+                    json=request_data, 
+                    timeout=60.0
+                )
                 response.raise_for_status()
                 return response.json()
 
         except Exception as e:
             logger.warning(f"Panel placement API failed: {str(e)}")
-            # Fall back to placeholder
-            return await self.place_panels(
-                image_path,
-                usable_area_result,
-                panel,
-                lat,
-                lon,
-                roof_azimuth,
-                roof_tilt,
-                annual_irradiance,
-                panel_spacing,
-                panel_count,
-            )
+            return None

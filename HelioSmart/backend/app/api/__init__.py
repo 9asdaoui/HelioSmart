@@ -6,6 +6,7 @@ from .inverters import router as inverters_router
 from .utilities import router as utilities_router
 from .solar_configurations import router as solar_configurations_router
 from .estimation_create import router as estimation_create_router
+from .chatbot import router as chatbot_router
 
 # Create main API router
 api_router = APIRouter(prefix="/api/v1")
@@ -17,5 +18,6 @@ api_router.include_router(panels_router)
 api_router.include_router(inverters_router)
 api_router.include_router(utilities_router)
 api_router.include_router(solar_configurations_router)
+api_router.include_router(chatbot_router, prefix="/chatbot", tags=["chatbot"])
 
 __all__ = ["api_router"]

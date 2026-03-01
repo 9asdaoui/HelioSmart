@@ -90,6 +90,7 @@ class Estimation(Base):
     optimum_tilt = Column(Float, nullable=True)
     optimum_azimuth = Column(Float, nullable=True)
     total_losses_percent = Column(Float, nullable=True)
+    loss_breakdown = Column(JSON, nullable=True)  # Detailed loss breakdown for waterfall chart
     
     # Roof type
     roof_type = Column(String(100), nullable=True)

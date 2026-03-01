@@ -19,23 +19,49 @@ export default function EstimationDetails() {
   
   const estimation = data?.data
   
-  // Mock data for charts (in production, this would come from backend)
-  const monthlyData = [
-    { month: 'Jan', ac: 850, dc: 920 },
-    { month: 'Feb', ac: 920, dc: 990 },
-    { month: 'Mar', ac: 1100, dc: 1180 },
-    { month: 'Apr', ac: 1250, dc: 1340 },
-    { month: 'May', ac: 1350, dc: 1450 },
-    { month: 'Jun', ac: 1400, dc: 1500 },
-    { month: 'Jul', ac: 1380, dc: 1480 },
-    { month: 'Aug', ac: 1300, dc: 1390 },
-    { month: 'Sep', ac: 1150, dc: 1230 },
-    { month: 'Oct', ac: 980, dc: 1050 },
-    { month: 'Nov', ac: 850, dc: 920 },
-    { month: 'Dec', ac: 780, dc: 840 }
-  ]
+  // Month labels for charts
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   
-  const monthlyConsumption = [900, 950, 1000, 1050, 1100, 1150, 1200, 1180, 1100, 1000, 950, 900]
+  // Use real data from backend for monthly production
+  // ac_monthly and dc_monthly are arrays of 12 values from PVWatts
+  const getMonthlyData = () => {
+    if (estimation?.ac_monthly && estimation?.dc_monthly) {
+      // Real data from PVWatts API
+      const acData = Array.isArray(estimation.ac_monthly) ? estimation.ac_monthly : Object.values(estimation.ac_monthly || {})
+      const dcData = Array.isArray(estimation.dc_monthly) ? estimation.dc_monthly : Object.values(estimation.dc_monthly || {})
+      return monthLabels.map((month, i) => ({
+        month,
+        ac: Math.round(acData[i] || 0),
+        dc: Math.round(dcData[i] || 0)
+      }))
+    }
+    // Fallback: estimate based on annual production with seasonal variation
+    const annualProduction = estimation?.energy_annual || 12000
+    const monthlyAvg = annualProduction / 12
+    const seasonalFactors = [0.7, 0.75, 0.9, 1.05, 1.15, 1.2, 1.18, 1.1, 0.95, 0.85, 0.72, 0.65]
+    return monthLabels.map((month, i) => ({
+      month,
+      ac: Math.round(monthlyAvg * seasonalFactors[i]),
+      dc: Math.round(monthlyAvg * seasonalFactors[i] * 1.08) // DC is typically 8% higher before inverter losses
+    }))
+  }
+  
+  const monthlyData = getMonthlyData()
+  
+  // Use real monthly consumption data if available
+  const getMonthlyConsumption = () => {
+    if (estimation?.monthly_usage) {
+      const usageData = Array.isArray(estimation.monthly_usage) ? estimation.monthly_usage : Object.values(estimation.monthly_usage || {})
+      return usageData.map(v => Math.round(v || 0))
+    }
+    // Fallback: estimate from annual usage with typical residential pattern
+    const annualUsage = estimation?.annual_usage_kwh || 10000
+    const monthlyAvg = annualUsage / 12
+    const consumptionFactors = [0.9, 0.85, 0.9, 0.95, 1.0, 1.15, 1.2, 1.15, 1.0, 0.95, 0.9, 0.95]
+    return consumptionFactors.map(f => Math.round(monthlyAvg * f))
+  }
+  
+  const monthlyConsumption = getMonthlyConsumption()
   
   useEffect(() => {
     if (!estimation || !window.Chart) return
@@ -92,9 +118,9 @@ export default function EstimationDetails() {
     
     // Financial Overview Pie Chart
     if (financialChartRef.current) {
-      const systemCost = (estimation.system_capacity || 5) * 3000
-      const installationCost = systemCost * 0.15
-      const consultationFees = 500
+      const chartSystemCost = (estimation.system_capacity || 5) * 3000
+      const chartInstallationCost = estimation.mounting_structure_cost || (chartSystemCost * 0.15)
+      const chartConsultationFees = 500
       
       const ctx = financialChartRef.current.getContext('2d')
       new window.Chart(ctx, {
@@ -102,7 +128,7 @@ export default function EstimationDetails() {
         data: {
           labels: ['System Cost', 'Installation Cost', 'Consulting Fees'],
           datasets: [{
-            data: [systemCost, installationCost, consultationFees],
+            data: [chartSystemCost, chartInstallationCost, chartConsultationFees],
             backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'],
             borderWidth: 2,
             borderColor: '#ffffff'
@@ -118,7 +144,7 @@ export default function EstimationDetails() {
             tooltip: {
               callbacks: {
                 label: function(context) {
-                  return context.label + ': $' + context.parsed.toLocaleString()
+                  return context.label + ': ' + context.parsed.toLocaleString() + ' MAD'
                 }
               }
             }
@@ -129,12 +155,18 @@ export default function EstimationDetails() {
     
     // ROI Chart
     if (roiChartRef.current) {
-      const totalInvestment = (estimation.system_capacity || 5) * 3500
-      const annualSavings = (estimation.annual_usage_kwh || 10000) * 0.15
+      // Use real calculation values
+      const realElectricityRate = estimation.annual_cost && estimation.annual_usage_kwh 
+        ? estimation.annual_cost / estimation.annual_usage_kwh 
+        : 1.5
+      const realSystemCost = (estimation.system_capacity || 5) * 3000
+      const realInstallationCost = estimation.mounting_structure_cost || (realSystemCost * 0.15)
+      const realTotalInvestment = realSystemCost + realInstallationCost + 500
+      const realAnnualSavings = (estimation.energy_annual || 0) * realElectricityRate
       const years = Array.from({length: 26}, (_, i) => i)
       const cumulativeSavings = years.map(year => {
-        if (year === 0) return -totalInvestment
-        return -totalInvestment + (year * annualSavings)
+        if (year === 0) return -realTotalInvestment
+        return -realTotalInvestment + (year * realAnnualSavings)
       })
       
       const ctx = roiChartRef.current.getContext('2d')
@@ -165,7 +197,7 @@ export default function EstimationDetails() {
             tooltip: {
               callbacks: {
                 label: function(context) {
-                  return 'Net Savings: $' + Math.round(context.parsed.y).toLocaleString()
+                  return 'Net Savings: ' + Math.round(context.parsed.y).toLocaleString() + ' MAD'
                 }
               }
             }
@@ -174,7 +206,7 @@ export default function EstimationDetails() {
             y: {
               title: {
                 display: true,
-                text: 'Cumulative Savings ($)'
+                text: 'Cumulative Savings (MAD)'
               }
             },
             x: {
@@ -308,6 +340,53 @@ export default function EstimationDetails() {
     
     // System Loss Waterfall (using Highcharts)
     if (window.Highcharts) {
+      // Get loss data from backend or use defaults
+      const lossBreakdown = estimation.loss_breakdown?.breakdown || {
+        temperature_loss: 3.0,
+        soiling_loss: 3.0,
+        mismatch_loss: 1.0,
+        dc_wiring_loss: 2.0,
+        inverter_loss: 4.0,
+        ac_wiring_loss: 1.0,
+        other_loss: 2.0,
+        shading_loss: 0.0
+      }
+      
+      // Calculate energy values based on annual production
+      const annualProduction = estimation.energy_annual || 10000
+      const performanceRatio = estimation.loss_breakdown?.performance_ratio || 0.85
+      
+      // POA irradiance (what the panels receive) is annual production * PR ratio
+      const poaEnergy = Math.round(annualProduction / performanceRatio)
+      
+      // Calculate each loss step
+      const tempLossKwh = Math.round(poaEnergy * lossBreakdown.temperature_loss / 100)
+      const afterTemp = poaEnergy - tempLossKwh
+      
+      const soilLossKwh = Math.round(poaEnergy * lossBreakdown.soiling_loss / 100)
+      const afterSoil = afterTemp - soilLossKwh
+      
+      const shadeLossKwh = Math.round(poaEnergy * lossBreakdown.shading_loss / 100)
+      const afterShade = afterSoil - shadeLossKwh
+      
+      const mismatchLossKwh = Math.round(poaEnergy * lossBreakdown.mismatch_loss / 100)
+      const dcNominal = afterShade - mismatchLossKwh
+      
+      const dcWiringLossKwh = Math.round(poaEnergy * lossBreakdown.dc_wiring_loss / 100)
+      const afterDcWiring = dcNominal - dcWiringLossKwh
+      
+      const inverterLossKwh = Math.round(poaEnergy * lossBreakdown.inverter_loss / 100)
+      const acFromInverter = afterDcWiring - inverterLossKwh
+      
+      const acWiringLossKwh = Math.round(poaEnergy * lossBreakdown.ac_wiring_loss / 100)
+      const afterAcWiring = acFromInverter - acWiringLossKwh
+      
+      const otherLossKwh = Math.round(poaEnergy * lossBreakdown.other_loss / 100)
+      const exportableEnergy = Math.round(annualProduction)
+      
+      // Calculate max for Y axis
+      const yMax = Math.ceil(poaEnergy / 1000) * 1000 + 500
+      
       window.Highcharts.chart('waterfallChart', {
         chart: {
           type: 'bar',
@@ -321,17 +400,21 @@ export default function EstimationDetails() {
             fontWeight: 'bold'
           }
         },
+        subtitle: {
+          text: `Total System Losses: ${estimation.loss_breakdown?.total_loss_percentage?.toFixed(1) || estimation.losses?.toFixed(1)}% | Performance Ratio: ${(performanceRatio * 100).toFixed(1)}%`,
+          style: { fontSize: '12px' }
+        },
         xAxis: {
           categories: [
-            'POA irradiance',
-            'Soiling',
-            'Shading',
-            'IAM',
-            'DC nominal energy (with losses)',
-            'Inverter loss',
-            'AC energy from inverter',
-            'Consumptions from auxiliary circuits',
-            'Exportable energy'
+            'POA Irradiance',
+            `Temperature Loss (${lossBreakdown.temperature_loss}%)`,
+            `Soiling Loss (${lossBreakdown.soiling_loss}%)`,
+            `Shading Loss (${lossBreakdown.shading_loss}%)`,
+            `Mismatch Loss (${lossBreakdown.mismatch_loss}%)`,
+            `DC Wiring Loss (${lossBreakdown.dc_wiring_loss}%)`,
+            `Inverter Loss (${lossBreakdown.inverter_loss}%)`,
+            `AC Wiring Loss (${lossBreakdown.ac_wiring_loss}%)`,
+            'Exportable Energy'
           ],
           labels: {
             style: {
@@ -341,19 +424,19 @@ export default function EstimationDetails() {
         },
         yAxis: {
           title: {
-            text: null
+            text: 'Energy (kWh/year)'
           },
           min: 0,
-          max: 2200,
-          tickInterval: 200
+          max: yMax,
+          tickInterval: Math.round(yMax / 10)
         },
         legend: {
           enabled: false
         },
         tooltip: {
           formatter: function() {
-            return '<b>' + this.x + '</b><br/>' +
-              'Value: ' + Math.abs(this.y) + ' kWh'
+            const val = Math.abs(this.y)
+            return '<b>' + this.x + '</b><br/>Value: ' + val.toLocaleString() + ' kWh/year'
           }
         },
         plotOptions: {
@@ -361,35 +444,40 @@ export default function EstimationDetails() {
             dataLabels: {
               enabled: true,
               formatter: function() {
-                return Math.abs(this.y)
-              }
+                return Math.abs(this.y).toLocaleString()
+              },
+              style: { fontSize: '10px' }
             }
           }
         },
         series: [
           {
             name: 'Base',
-            data: [0, 1950, 1930, 1900, 1850, 1800, 1750, 1730, 0],
+            data: [0, poaEnergy - tempLossKwh, afterTemp - soilLossKwh, afterSoil - shadeLossKwh, 
+                   afterShade - mismatchLossKwh, dcNominal - dcWiringLossKwh, afterDcWiring - inverterLossKwh, 
+                   acFromInverter - acWiringLossKwh, 0],
             color: 'transparent',
             showInLegend: false
           },
           {
-            name: 'Losses/Production',
+            name: 'Energy/Losses',
             data: [
-              { y: 2000, color: '#4CAF50' },
-              { y: -20, color: '#FF5722' },
-              { y: -30, color: '#FF5722' },
-              { y: -50, color: '#FF5722' },
-              { y: -50, color: '#FFC107' },
-              { y: -50, color: '#FF5722' },
-              { y: -20, color: '#4CAF50' },
-              { y: -20, color: '#FF5722' },
-              { y: 1710, color: '#2196F3' }
+              { y: poaEnergy, color: '#4CAF50' },
+              { y: -tempLossKwh, color: '#FF5722' },
+              { y: -soilLossKwh, color: '#FF5722' },
+              { y: -shadeLossKwh, color: '#FF9800' },
+              { y: -mismatchLossKwh, color: '#FFC107' },
+              { y: -dcWiringLossKwh, color: '#FF5722' },
+              { y: -inverterLossKwh, color: '#E91E63' },
+              { y: -acWiringLossKwh, color: '#FF5722' },
+              { y: exportableEnergy, color: '#2196F3' }
             ],
             dataLabels: {
               enabled: true,
               formatter: function() {
-                return Math.abs(this.y)
+                const val = Math.abs(this.y)
+                if (this.y < 0) return '-' + val.toLocaleString()
+                return val.toLocaleString()
               }
             }
           }
@@ -439,13 +527,21 @@ export default function EstimationDetails() {
     )
   }
   
-  const systemCost = (estimation.system_capacity || 5) * 3000
-  const installationCost = systemCost * 0.15
+  // Financial calculations using real data
+  const electricityRate = estimation.annual_cost && estimation.annual_usage_kwh 
+    ? estimation.annual_cost / estimation.annual_usage_kwh 
+    : 1.5  // Default rate in MAD/kWh
+  const systemCost = (estimation.system_capacity || 5) * 3000  // 3000 MAD per kW
+  const installationCost = estimation.mounting_structure_cost || (systemCost * 0.15)
   const consultationFees = 500
   const totalInvestment = systemCost + installationCost + consultationFees
-  const annualSavings = (estimation.annual_usage_kwh || 10000) * 0.15
-  const paybackPeriod = totalInvestment / annualSavings
+  // Annual savings = energy produced * electricity rate (what you save by not buying from grid)
+  const annualSavings = (estimation.energy_annual || 0) * electricityRate
+  const paybackPeriod = annualSavings > 0 ? totalInvestment / annualSavings : 0
   const total25YearSavings = (annualSavings * 25) - totalInvestment
+  
+  // Usable area - prefer SAM-detected area, fall back to roof_area
+  const usableArea = estimation.usable_area_m2 || estimation.roof_area || 0
   
   return (
     <div className="estimation-details-container space-y-6">
@@ -501,6 +597,34 @@ export default function EstimationDetails() {
                   {estimation.email && <p className="text-sm text-gray-600">{estimation.email}</p>}
                 </div>
               )}
+              {/* AI Roof Detection Info */}
+              <div className="mt-4 pt-3 border-t border-gray-200">
+                <p className="text-sm font-medium text-gray-700 mb-2">AI Roof Detection</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-gray-500">Roof Type:</span>
+                    <span className="ml-1 text-gray-700">{estimation.roof_type || estimation.roof_type_detected || 'flat'}</span>
+                  </div>
+                  {estimation.roof_tilt && (
+                    <div>
+                      <span className="text-gray-500">Roof Tilt:</span>
+                      <span className="ml-1 text-gray-700">{estimation.roof_tilt}°</span>
+                    </div>
+                  )}
+                  {estimation.facade_reduction_ratio && (
+                    <div>
+                      <span className="text-gray-500">Facade Factor:</span>
+                      <span className="ml-1 text-gray-700">{(estimation.facade_reduction_ratio * 100).toFixed(0)}%</span>
+                    </div>
+                  )}
+                  {estimation.meters_per_pixel && (
+                    <div>
+                      <span className="text-gray-500">Scale:</span>
+                      <span className="ml-1 text-gray-700">{estimation.meters_per_pixel?.toFixed(3)} m/px</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -512,9 +636,9 @@ export default function EstimationDetails() {
             <h3 className="text-lg font-semibold text-orange-600 mb-4">System Size</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-600">
-                <p className="text-sm text-gray-600">Roof Area</p>
-                <p className="text-2xl font-bold text-gray-800">{estimation.roof_area || 'N/A'}</p>
-                <p className="text-xs text-gray-500">sq. meters</p>
+                <p className="text-sm text-gray-600">Usable Roof Area</p>
+                <p className="text-2xl font-bold text-gray-800">{usableArea ? usableArea.toFixed(1) : 'N/A'}</p>
+                <p className="text-xs text-gray-500">sq. meters (AI detected)</p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-600">
                 <p className="text-sm text-gray-600">Panel Count</p>
@@ -627,7 +751,7 @@ export default function EstimationDetails() {
           <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
             <Zap className="w-8 h-8 text-orange-600 mb-2" />
             <p className="text-sm text-gray-600">System Capacity</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.system_capacity} kW</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.system_capacity?.toFixed(2)} kW</p>
           </div>
           <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
             <TrendingUp className="w-8 h-8 text-orange-600 mb-2" />
@@ -639,24 +763,40 @@ export default function EstimationDetails() {
             <p className="text-2xl font-bold text-gray-800">{estimation.panel_count || 'N/A'}</p>
           </div>
           <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
+            <p className="text-sm text-gray-600">Capacity Factor</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.capacity_factor ? (estimation.capacity_factor * 100).toFixed(1) : 'N/A'}%</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
             <p className="text-sm text-gray-600">Tilt Angle</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.tilt}°</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.tilt?.toFixed(1)}°</p>
           </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
+          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
             <p className="text-sm text-gray-600">Azimuth</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.azimuth}°</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.azimuth?.toFixed(1)}°</p>
           </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
+          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
             <p className="text-sm text-gray-600">System Losses</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.losses}%</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.losses?.toFixed(1)}%</p>
           </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
+          <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow">
+            <p className="text-sm text-gray-600">Solar Irradiance</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.solrad_annual ? estimation.solrad_annual.toFixed(2) : (estimation.solar_irradiance_avg?.toFixed(2) || 'N/A')} kWh/m²/day</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
             <p className="text-sm text-gray-600">Coverage</p>
             <p className="text-2xl font-bold text-gray-800">{estimation.coverage_percentage}%</p>
           </div>
-          <div className="bg-white p-4 rounded-lg border-l-4 border-orange-500 shadow">
-            <p className="text-sm text-gray-600">Roof Area</p>
-            <p className="text-2xl font-bold text-gray-800">{estimation.roof_area || 'N/A'} m²</p>
+          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
+            <p className="text-sm text-gray-600">Usable Area</p>
+            <p className="text-2xl font-bold text-gray-800">{usableArea ? usableArea.toFixed(1) : 'N/A'} m²</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
+            <p className="text-sm text-gray-600">Performance Ratio</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.performance_ratio ? (estimation.performance_ratio * 100).toFixed(1) : 'N/A'}%</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border-l-4 border-green-500 shadow">
+            <p className="text-sm text-gray-600">Production/kW</p>
+            <p className="text-2xl font-bold text-gray-800">{estimation.annual_production_per_kw?.toFixed(0) || 'N/A'} kWh</p>
           </div>
         </div>
       </div>

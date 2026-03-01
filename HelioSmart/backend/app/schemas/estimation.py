@@ -27,7 +27,7 @@ class EstimationBase(BaseModel):
     zip_code: Optional[str] = None
     country: Optional[str] = None
     roof_image_path: Optional[str] = None
-    roof_polygon: Optional[Dict[str, Any]] = None
+    roof_polygon: Optional[Any] = None  # Can be List[List[float]] or Dict
     roof_area: Optional[float] = None
     building_floors: int = 1
     scale_meters_per_pixel: Optional[float] = None
@@ -67,7 +67,7 @@ class EstimationUpdate(BaseModel):
     zip_code: Optional[str] = None
     country: Optional[str] = None
     roof_image_path: Optional[str] = None
-    roof_polygon: Optional[Dict[str, Any]] = None
+    roof_polygon: Optional[Any] = None  # Can be List[List[float]] or Dict
     roof_area: Optional[float] = None
     building_floors: Optional[int] = None
     scale_meters_per_pixel: Optional[float] = None
@@ -85,7 +85,7 @@ class EstimationUpdate(BaseModel):
     losses: Optional[float] = None
     energy_annual: Optional[float] = None
     status: Optional[EstimationStatus] = None
-    usable_polygon: Optional[Dict[str, Any]] = None
+    usable_polygon: Optional[Any] = None  # Can be List[List[float]] or Dict
     usable_area: Optional[float] = None
     usable_area_m2: Optional[float] = None
     roof_type_detected: Optional[str] = None
@@ -96,7 +96,7 @@ class EstimationUpdate(BaseModel):
 class EstimationResponse(EstimationBase):
     """Schema for estimation response"""
     id: int
-    usable_polygon: Optional[Dict[str, Any]] = None
+    usable_polygon: Optional[Any] = None  # Can be List[List[float]] or Dict
     usable_area: Optional[float] = None
     usable_area_m2: Optional[float] = None
     roof_mask_image: Optional[str] = None
@@ -120,6 +120,7 @@ class EstimationResponse(EstimationBase):
     optimum_tilt: Optional[float] = None
     optimum_azimuth: Optional[float] = None
     total_losses_percent: Optional[float] = None
+    loss_breakdown: Optional[Dict[str, Any]] = None  # Detailed loss breakdown for waterfall chart
     roof_type: Optional[str] = None
     roof_tilt: Optional[float] = None
     roof_net_tilt: Optional[float] = None
