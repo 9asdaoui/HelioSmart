@@ -64,6 +64,7 @@ export default function CreateEstimation() {
   const [visualizationData, setVisualizationData] = useState(null)
   const [estimationId, setEstimationId] = useState(null)
   const [sitePlanSnapshot, setSitePlanSnapshot] = useState(null)
+  const [processingStep, setProcessingStep] = useState(0) // 0=upload, 1=SAM, 2=panels, 3=results
   const [errors, setErrors] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
   const [capturedRoofImage, setCapturedRoofImage] = useState(null)
@@ -75,7 +76,8 @@ export default function CreateEstimation() {
   const captureBoxRef = useRef(null)
   const [map, setMap] = useState(null)
   const [geocoder, setGeocoder] = useState(null)
-  const [mapCenter, setMapCenter] = useState({ lat: 31.6295, lng: -7.9811 })
+  const [mapCenter, setMapCenter] = useState({ lat: 34.0209, lng: -6.8417 }) // Default: Rabat
+  const [isLocating, setIsLocating] = useState(false)
   
   // Fetch utilities from database
   const { data: utilitiesData, isLoading: utilitiesLoading } = useQuery({
@@ -112,6 +114,18 @@ export default function CreateEstimation() {
     }
   })
   
+  // Advance fake processing steps every 30 s while step 7 is active
+  useEffect(() => {
+    if (currentStep !== 7) { setProcessingStep(0); return }
+    setProcessingStep(0)
+    const timers = [
+      setTimeout(() => setProcessingStep(1), 30000),
+      setTimeout(() => setProcessingStep(2), 60000),
+      setTimeout(() => setProcessingStep(3), 90000),
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [currentStep])
+
   // Initialize Google Maps
   useEffect(() => {
     const initMap = () => {
@@ -119,7 +133,7 @@ export default function CreateEstimation() {
       
       const newMap = new window.google.maps.Map(mapRef.current, {
         center: mapCenter,
-        zoom: 20,  // Higher zoom for accurate roof capture
+        zoom: mapCenter.lat === 34.0209 ? 15 : 20, // City overview on first load, rooftop zoom after search
         mapTypeId: 'satellite',
         tilt: 0,
         heading: 0,
@@ -160,6 +174,24 @@ export default function CreateEstimation() {
     }
   }
   
+  const getUserGeolocation = () => {
+    if (!navigator.geolocation) return
+    setIsLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        setMapCenter(latlng)
+        if (map) {
+          map.setCenter(latlng)
+          map.setZoom(20)
+        }
+        setIsLocating(false)
+      },
+      () => setIsLocating(false),
+      { enableHighAccuracy: true, timeout: 8000 }
+    )
+  }
+
   const captureCurrentLocation = async () => {
     if (!map || !geocoder || !mapRef.current) {
       setErrors({ ...errors, location: 'Map is not ready yet' })
@@ -538,9 +570,21 @@ export default function CreateEstimation() {
               
               <div className="relative" style={{ height: '400px', borderRadius: '0.5rem', overflow: 'hidden' }}>
                 <div ref={mapRef} style={{ width: '100%', height: '100%' }}></div>
-                <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-3 py-1.5 rounded-full shadow-lg font-medium">
-                  📍 Center your roof in the box, then click Capture
-                </div>
+                {/* Get Current Location button */}
+                <button
+                  type="button"
+                  onClick={getUserGeolocation}
+                  disabled={isLocating}
+                  title="Get current location"
+                  className="absolute top-2 right-2 z-10 bg-white hover:bg-gray-50 border border-gray-300 shadow text-gray-700 rounded-md px-2.5 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                >
+                  {isLocating ? (
+                    <svg className="w-3.5 h-3.5 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path strokeLinecap="round" d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+                  )}
+                  {isLocating ? 'Locating…' : 'My Location'}
+                </button>
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                   <div className="relative" style={{ width: '40%', aspectRatio: '4/3' }}>
                     <div className="absolute inset-0 border-3 border-dashed border-yellow-400 rounded-lg" style={{ borderWidth: '3px', boxShadow: '0 0 0 3px rgba(250, 204, 21, 0.4), inset 0 0 20px rgba(0,0,0,0.1)' }}>
@@ -837,26 +881,36 @@ export default function CreateEstimation() {
                 </div>
               </div>
               <div className="mt-8 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center text-gray-700">
-                  <span className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm mr-3">✓</span>
-                  <span className="font-medium">Uploading satellite image</span>
-                </div>
-                <div className="flex items-center text-gray-700">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                  <span className="font-medium">Running SAM roof segmentation</span>
-                </div>
-                <div className="flex items-center text-gray-400">
-                  <span className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-white text-sm mr-3">3</span>
-                  <span>Calculating panel placement</span>
-                </div>
-                <div className="flex items-center text-gray-400">
-                  <span className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-white text-sm mr-3">4</span>
-                  <span>Generating results</span>
-                </div>
+                {[
+                  { label: 'Uploading satellite image' },
+                  { label: 'Running SAM roof segmentation' },
+                  { label: 'Calculating panel placement' },
+                  { label: 'Generating results' },
+                ].map((s, i) => {
+                  const done = i < processingStep
+                  const active = i === processingStep
+                  return (
+                    <div key={i} className={`flex items-center transition-all duration-500 ${
+                      done ? 'text-gray-700' : active ? 'text-gray-700' : 'text-gray-400'
+                    }`}>
+                      {done ? (
+                        <span className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm mr-3 flex-shrink-0">✓</span>
+                      ) : active ? (
+                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      ) : (
+                        <span className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-white text-sm mr-3 flex-shrink-0">{i + 1}</span>
+                      )}
+                      <span className={`font-medium ${active ? 'text-blue-700' : ''}`}>{s.label}</span>
+                      {active && (
+                        <span className="ml-2 text-xs text-blue-400 animate-pulse">processing…</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-              <p className="text-center text-sm text-gray-500 mt-6">This may take 1-2 minutes depending on image size...</p>
+              <p className="text-center text-sm text-gray-500 mt-6">This may take 1–2 minutes depending on image size…</p>
             </div>
           </div>
         )}
