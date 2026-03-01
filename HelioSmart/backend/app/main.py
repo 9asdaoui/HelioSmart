@@ -31,6 +31,13 @@ os.makedirs("storage", exist_ok=True)
 app.mount("/storage", StaticFiles(directory="storage"), name="storage")
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Kick off chatbot model initialization in the background on startup."""
+    from app.api.chatbot import start_background_init
+    start_background_init()
+
+
 @app.get("/")
 def root():
     """Root endpoint"""

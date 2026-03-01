@@ -16,8 +16,10 @@ export default function Layout({ children }) {
     { path: '/admin/configurations', label: 'Settings', icon: Settings },
   ]
   
+  const isChatbot = location.pathname === '/chatbot'
+
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className={isChatbot ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen flex flex-col'}>
       {/* Header */}
       <header className="bg-white shadow-md">
         <div className="container mx-auto px-4 py-4">
@@ -114,18 +116,20 @@ export default function Layout({ children }) {
       </header>
       
       {/* Main Content */}
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main className={isChatbot ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 container mx-auto px-4 py-8'}>
         {children}
       </main>
       
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200">
-        <div className="container mx-auto px-4 py-6">
-          <p className="text-center text-gray-600">
-            &copy; 2025 HelioSmart. All rights reserved.
-          </p>
-        </div>
-      </footer>
+      {!isChatbot && (
+        <footer className="bg-white border-t border-gray-200">
+          <div className="container mx-auto px-4 py-6">
+            <p className="text-center text-gray-600">
+              &copy; 2025 HelioSmart. All rights reserved.
+            </p>
+          </div>
+        </footer>
+      )}
     </div>
   )
 }

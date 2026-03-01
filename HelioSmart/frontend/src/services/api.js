@@ -82,22 +82,24 @@ export const configurationsAPI = {
 // Chatbot
 export const chatbotAPI = {
   getStatus: () => api.get('/chatbot/status'),
-  chat: (query, language = 'en', maxTokens = 400, useRag = true) =>
+  chat: (query, language = 'en', maxTokens = 400, useRag = true, history = []) =>
     api.post('/chatbot/chat', {
       query,
       language,
       max_tokens: maxTokens,
       use_rag: useRag,
+      history,
     }),
-  chatWithTTS: (query, language = 'en', maxTokens = 400, useRag = true) =>
+  chatWithTTS: (query, language = 'en', maxTokens = 400, useRag = true, history = []) =>
     api.post('/chatbot/chat-with-tts', {
       query,
       language,
       max_tokens: maxTokens,
       use_rag: useRag,
+      history,
     }),
   textToSpeech: (text, language = 'en') =>
-    api.post('/chatbot/tts', { text, language }, { responseType: 'blob' }),
+    api.post('/chatbot/tts', { text, language }, { responseType: 'arraybuffer' }),
   uploadAudio: (audioFile) => {
     const formData = new FormData()
     formData.append('audio', audioFile)

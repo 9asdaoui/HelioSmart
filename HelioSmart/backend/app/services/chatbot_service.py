@@ -51,8 +51,11 @@ except ImportError:
     logger.warning("gTTS not available")
 
 try:
-    from langchain.vectorstores import FAISS
-    from langchain_community.embeddings import HuggingFaceEmbeddings
+    from langchain_community.vectorstores import FAISS
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings
+    except ImportError:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     RAG_AVAILABLE = True
 except ImportError:
@@ -201,6 +204,7 @@ class ChatbotService:
         context: str = "",
         language: str = "en",
         max_tokens: int = 400,
+        history: Optional[list] = None,
     ) -> str:
         """Generate response using Ollama LLM"""
         if not self.ollama_available:
@@ -219,32 +223,50 @@ class ChatbotService:
         try:
             # Build system prompt for HelioSmart context
             system_prompt = self._get_system_prompt(language)
-            
-            # Build the prompt with context if available
+
+            # Language-specific labels and a hard reminder injected right before the response token
+            lang_meta = {
+                "en": ("User", "Assistant", ""),
+                "fr": ("Utilisateur", "Assistant", "RAPPEL: réponds uniquement en français.\n"),
+                "ar": ("المستخدم", "المساعد", "تذكير صارم: أجب بالعربية الفصحى فقط. ممنوع استخدام أي كلمة إنجليزية أو فرنسية.\n"),
+            }
+            user_label, assistant_label, lang_reminder = lang_meta.get(language, lang_meta["en"])
+
+            # Build conversation history using language-appropriate labels
+            history_str = ""
+            if history:
+                for role, content in history[-6:]:
+                    label = user_label if role == "user" else assistant_label
+                    history_str += f"{label}: {content}\n"
+
+            # Language reminder sits immediately before the generation token — small models respect it most here
             if context:
-                full_prompt = f"{system_prompt}\n\nContext from documents:\n{context}\n\nUser: {query}\n\nAssistant:"
+                conversation = f"Context from documents:\n{context}\n\n{history_str}{user_label}: {query}\n{lang_reminder}{assistant_label}:"
             else:
-                full_prompt = f"{system_prompt}\n\nUser: {query}\n\nAssistant:"
-            
-            # Call Ollama API
+                conversation = f"{history_str}{user_label}: {query}\n{lang_reminder}{assistant_label}:"
+
+            # Use Ollama's dedicated 'system' field — handled separately from the prompt,
+            # much more effective at enforcing instructions for small models like llama3.2:3b
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{OLLAMA_URL}/api/generate",
                     json={
                         "model": self.ollama_model,
-                        "prompt": full_prompt,
+                        "system": system_prompt,
+                        "prompt": conversation,
                         "stream": False,
                         "options": {
-                            "temperature": 0.7,
+                            "temperature": 0.5,  # lower = less creative hallucination / code-switching
                             "top_p": 0.9,
                             "num_predict": max_tokens,
                         }
                     }
                 )
-                
+
                 if response.status_code == 200:
                     result = response.json()
-                    return result.get("response", "").strip()
+                    raw = result.get("response", "").strip()
+                    return self._post_process_response(raw, language)
                 else:
                     logger.error(f"Ollama error: {response.status_code}")
                     return self._generate_fallback_response(query, language, context)
@@ -259,51 +281,23 @@ class ChatbotService:
     def _get_system_prompt(self, language: str) -> str:
         """Get system prompt based on language"""
         prompts = {
-            "en": """You are HelioSmart Assistant, an AI helper for a solar energy estimation and consultation platform.
+            "en": """You are HelioSmart Assistant, an AI for a solar energy platform in Morocco.
+RULE: Respond ONLY in English. Never use Arabic or French words.
 
-HelioSmart is a comprehensive solar energy platform that:
-- Creates detailed solar installation estimations using PVWatts API and NASA POWER data
-- Calculates optimal solar panel configurations based on roof area and energy needs
-- Designs inverter systems with proper stringing and voltage validation
-- Provides financial analysis including ROI, payback period, and savings estimates
-- Offers environmental impact calculations (CO2 offset, trees equivalent)
-- Generates complete wiring specifications and bill of materials
-- Supports both residential and commercial solar projects in Morocco
+You help with: solar panel design, energy production estimates, inverter selection, ROI / payback analysis, CO2 offset, and location-based solar irradiance (PVWatts/NASA POWER).
+Be concise — 3-4 sentences max unless more detail is asked.""",
 
-Key features you can help with:
-☀️ Solar Estimations - Create and manage solar installation estimates
-📊 Energy Calculations - Monthly production, savings, and ROI analysis
-🔌 System Design - Panel selection, inverter configuration, wiring specs
-💰 Financial Planning - Cost estimates, incentives, payback periods
-🌍 Environmental Impact - Carbon offset, sustainability metrics
-📍 Location Analysis - Solar irradiance data for specific coordinates
+            "fr": """Tu es l'Assistant HelioSmart, une IA pour une plateforme d'énergie solaire au Maroc.
+RÈGLE ABSOLUE: Tu dois répondre UNIQUEMENT en français. N'utilise jamais l'anglais, l'arabe ou toute autre langue.
 
-Be helpful, concise, and informative. Provide accurate solar energy advice based on industry standards.
-Keep responses under 3-4 sentences unless more detail is specifically requested.""",
-            
-            "fr": """Vous êtes l'Assistant HelioSmart, une IA d'aide pour une plateforme d'estimation et de consultation en énergie solaire.
+Tu aides avec : conception de systèmes solaires, estimations d'énergie, sélection d'onduleurs, analyse ROI, impact environnemental, et irradiance solaire par localisation.
+Sois concis — 3-4 phrases maximum sauf si plus de détails sont demandés.""",
 
-HelioSmart est une plateforme complète d'énergie solaire qui:
-- Crée des estimations d'installation solaire détaillées
-- Calcule les configurations optimales de panneaux solaires
-- Conçoit des systèmes d'onduleurs avec validation
-- Fournit des analyses financières (ROI, période de retour)
-- Offre des calculs d'impact environnemental
-- Génère des spécifications de câblage complètes
+            "ar": """أنت مساعد HelioSmart، ذكاء اصطناعي لمنصة طاقة شمسية في المغرب.
+قاعدة صارمة: يجب أن تُجيب بالعربية الفصحى حصراً في كل ردودك. يُحظر تماماً استخدام أي كلمة إنجليزية أو فرنسية أو أجنبية مهما كانت. حتى المصطلحات التقنية يجب ترجمتها إلى العربية.
 
-Soyez utile et concis. Répondez en français.""",
-            
-            "ar": """أنت مساعد HelioSmart، مساعد ذكاء اصطناعي لمنصة تقدير واستشارات الطاقة الشمسية.
-
-HelioSmart هي منصة شاملة للطاقة الشمسية تقوم بـ:
-- إنشاء تقديرات تفصيلية لتثبيت الألواح الشمسية
-- حساب التكوينات المثلى للألواح الشمسية
-- تصميم أنظمة العاكسات مع التحقق من الجهد
-- تقديم التحليلات المالية (العائد على الاستثمار)
-- حساب الأثر البيئي (تعويض الكربون)
-- توليد مواصفات الأسلاك الكاملة
-
-كن مفيداً وموجزاً. أجب بالعربية."""
+تساعد المستخدمين في: تصميم أنظمة الألواح الشمسية، تقدير إنتاج الطاقة، اختيار العاكسات، تحليل العائد على الاستثمار وفترة الاسترداد، الأثر البيئي، وتحليل أشعة الشمس حسب الموقع.
+كن موجزاً — 3 إلى 4 جمل كحد أقصى ما لم يُطلب مزيد من التفاصيل.""",
         }
         return prompts.get(language, prompts["en"])
     

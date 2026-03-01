@@ -4,51 +4,81 @@ Chatbot endpoints with Ollama LLM integration for HelioSmart
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import os
 import logging
 import tempfile
+import asyncio
+import threading
 from fastapi.responses import FileResponse
 
 logger = logging.getLogger(__name__)
 
-# Lazy import for ChatbotService to avoid import errors when ML dependencies are not available
-ChatbotService = None
-
-def _get_chatbot_service_class():
-    global ChatbotService
-    if ChatbotService is None:
-        try:
-            from app.services.chatbot_service import ChatbotService as _ChatbotService
-            ChatbotService = _ChatbotService
-        except Exception as e:
-            logger.warning(f"ChatbotService not available: {e}")
-            ChatbotService = None
-    return ChatbotService
-
 router = APIRouter()
 
-# Global chatbot service instance
+# Global chatbot service instance + initialization state
 _chatbot_service = None
+_init_lock = threading.Lock()
+_initializing = False
+_init_error: Optional[str] = None
+
+
+def _background_init():
+    """Run chatbot service initialization in a background thread so startup is non-blocking."""
+    global _chatbot_service, _initializing, _init_error
+    try:
+        logger.info("Chatbot: starting background initialization…")
+        from app.services.chatbot_service import ChatbotService
+        instance = ChatbotService()
+        with _init_lock:
+            _chatbot_service = instance
+            _initializing = False
+        logger.info("Chatbot: background initialization complete.")
+    except Exception as e:
+        logger.error(f"Chatbot: background initialization failed: {e}")
+        with _init_lock:
+            _init_error = str(e)
+            _initializing = False
+
+
+def start_background_init():
+    """Called once at app startup — launches init in a daemon thread."""
+    global _initializing
+    with _init_lock:
+        if _initializing or _chatbot_service is not None:
+            return
+        _initializing = True
+    t = threading.Thread(target=_background_init, daemon=True, name="chatbot-init")
+    t.start()
 
 
 def get_chatbot_service():
-    """Get or initialize chatbot service"""
-    global _chatbot_service
-    ChatbotServiceClass = _get_chatbot_service_class()
-    if ChatbotServiceClass is None:
-        raise HTTPException(status_code=503, detail="Chatbot service not available - ML dependencies not installed")
-    if _chatbot_service is None:
-        _chatbot_service = ChatbotServiceClass()
-    return _chatbot_service
+    """Return the service instance or raise 503 if not ready yet."""
+    with _init_lock:
+        if _chatbot_service is not None:
+            return _chatbot_service
+        if _init_error:
+            raise HTTPException(status_code=503, detail=f"Chatbot init failed: {_init_error}")
+        if _initializing:
+            raise HTTPException(
+                status_code=503,
+                detail="Chatbot is still initializing (downloading models). Please retry in a moment."
+            )
+    raise HTTPException(status_code=503, detail="Chatbot service not available")
 
 
 # Schemas
+class HistoryMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
 class ChatRequest(BaseModel):
     query: str
     language: str = "en"
     max_tokens: int = 400
     use_rag: bool = True
+    history: Optional[List[HistoryMessage]] = []
 
 
 class ChatResponse(BaseModel):
@@ -72,9 +102,27 @@ class TTSRequest(BaseModel):
 
 @router.get("/status")
 async def get_chatbot_status():
-    """Get chatbot service status"""
-    service = get_chatbot_service()
-    return service.get_status()
+    """Get chatbot service status — always responds immediately, never blocks."""
+    with _init_lock:
+        svc = _chatbot_service
+        initializing = _initializing
+        err = _init_error
+
+    if svc is not None:
+        return svc.get_status()
+
+    # Service not ready yet — return current state without blocking
+    return {
+        "device": "cpu",
+        "llm_available": False,
+        "llm_model": None,
+        "ollama_url": os.getenv("OLLAMA_URL", "http://localhost:11434"),
+        "rag_available": False,
+        "stt_available": False,
+        "tts_available": False,
+        "initializing": initializing,
+        "init_error": err,
+    }
 
 
 @router.post("/tts")
@@ -89,11 +137,24 @@ async def text_to_speech(request: TTSRequest):
         if not speech_file or not os.path.exists(speech_file):
             raise HTTPException(status_code=500, detail="Failed to generate speech")
         
+        # Use BackgroundTask to delete the temp file after the response is sent
+        from starlette.background import BackgroundTask
+
+        def cleanup():
+            try:
+                if os.path.exists(speech_file):
+                    os.remove(speech_file)
+            except Exception:
+                pass
+
         return FileResponse(
             speech_file,
             media_type="audio/mpeg",
-            filename=os.path.basename(speech_file)
+            filename=os.path.basename(speech_file),
+            background=BackgroundTask(cleanup),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"TTS error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -112,12 +173,16 @@ async def chat(request: ChatRequest):
             context = service.get_rag_context(request.query)
             context_used = bool(context)
         
+        # Build history list for LLM
+        history = [(m.role, m.content) for m in (request.history or [])]
+
         # Generate response
         response = await service.generate_response(
             query=request.query,
             context=context,
             language=request.language,
             max_tokens=request.max_tokens,
+            history=history,
         )
         
         return ChatResponse(
@@ -239,11 +304,18 @@ async def add_document(file: UploadFile = File(...)):
 async def serve_audio(filename: str):
     """Serve generated audio files"""
     try:
-        audio_path = os.path.join("audio", filename)
+        # Sanitize filename to prevent path traversal
+        safe_name = os.path.basename(filename)
+        if not safe_name or safe_name != filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        audio_path = os.path.join("audio", safe_name)
         if os.path.exists(audio_path):
             return FileResponse(audio_path, media_type="audio/mpeg")
         else:
             raise HTTPException(status_code=404, detail="Audio file not found")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Audio serve error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

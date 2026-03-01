@@ -1,0 +1,20 @@
+# Delta requirements — installed on top of cliniq-backend:latest base image
+# cliniq-backend already provides: torch, transformers, sentence-transformers,
+# faiss-cpu, langchain, langchain-community, psycopg2-binary, pillow, httpx,
+# passlib, python-jose, pypdf, pandas, numpy, email-validator, python-dotenv
+
+# --- Packages NOT in cliniq-backend ---
+soundfile==0.12.1
+pydub==0.25.1
+gTTS==2.5.1
+SpeechRecognition==3.10.1
+langchain-text-splitters==0.0.1
+
+# --- Version upgrades (minor, backward-compatible) ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+sqlalchemy==2.0.35
+alembic==1.13.3
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-multipart==0.0.12
