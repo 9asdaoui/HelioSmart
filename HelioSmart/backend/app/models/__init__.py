@@ -5,6 +5,12 @@ from .inverter import Inverter
 from .utility import Utility
 from .utility_rate_range import UtilityRateRange
 from .solar_configuration import SolarConfiguration
+from .user import (
+    User, UserRole, UserStatus, Vendor, Product, ProductStatus, 
+    VendorDocument, DocumentStatus,
+    ProductCatalogUpload, ExtractionStatus, 
+    StagingProduct, StagingProductStatus
+)
 
 __all__ = [
     "Estimation",
@@ -14,4 +20,16 @@ __all__ = [
     "Utility",
     "UtilityRateRange",
     "SolarConfiguration",
+    "User",
+    "UserRole",
+    "UserStatus",
+    "Vendor",
+    "Product",
+    "ProductStatus",
+    "VendorDocument",
+    "DocumentStatus",
+    "ProductCatalogUpload",
+    "ExtractionStatus",
+    "StagingProduct",
+    "StagingProductStatus",
 ]

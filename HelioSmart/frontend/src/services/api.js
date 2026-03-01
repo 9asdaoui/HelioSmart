@@ -9,6 +9,33 @@ export const api = axios.create({
   },
 })
 
+// Add auth token to requests
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// Handle token expiration
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
+
 // Estimations
 export const estimationsAPI = {
   getAll: (params) => api.get('/estimations', { params }),
@@ -22,12 +49,7 @@ export const estimationsAPI = {
     // Add all fields to FormData
     Object.keys(formData).forEach(key => {
       if (formData[key] !== null && formData[key] !== undefined) {
-        // JSON stringify arrays and objects (like roof_points)
-        if (Array.isArray(formData[key]) || (typeof formData[key] === 'object' && !(formData[key] instanceof File))) {
-          formDataObj.append(key, JSON.stringify(formData[key]))
-        } else {
-          formDataObj.append(key, formData[key])
-        }
+        formDataObj.append(key, formData[key])
       }
     })
     
@@ -77,48 +99,4 @@ export const configurationsAPI = {
   update: (id, data) => api.put(`/solar-configurations/${id}`, data),
   bulkUpdate: (data) => api.put('/solar-configurations/bulk', data),
   delete: (id) => api.delete(`/solar-configurations/${id}`),
-}
-
-// Chatbot
-export const chatbotAPI = {
-  getStatus: () => api.get('/chatbot/status'),
-  chat: (query, language = 'en', maxTokens = 400, useRag = true, history = [], sessionId = null) =>
-    api.post('/chatbot/chat', {
-      query,
-      language,
-      max_tokens: maxTokens,
-      use_rag: useRag,
-      history,
-      session_id: sessionId,
-    }),
-  chatWithTTS: (query, language = 'en', maxTokens = 400, useRag = true, history = [], sessionId = null) =>
-    api.post('/chatbot/chat-with-tts', {
-      query,
-      language,
-      max_tokens: maxTokens,
-      use_rag: useRag,
-      history,
-      session_id: sessionId,
-    }),
-  textToSpeech: (text, language = 'en') =>
-    api.post('/chatbot/tts', { text, language }, { responseType: 'arraybuffer' }),
-  uploadAudio: (audioFile, language = 'en', sessionId = null) => {
-    const formData = new FormData()
-    formData.append('audio', audioFile)
-    formData.append('language', language)
-    if (sessionId) formData.append('session_id', sessionId)
-    return api.post('/chatbot/upload-audio', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  },
-  uploadSessionDocument: (sessionId, file) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('session_id', sessionId)
-    return api.post('/chatbot/upload-session-document', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  },
-  getSessionInfo: (sessionId) => api.get(`/chatbot/session/${sessionId}`),
-  clearSession: (sessionId) => api.delete(`/chatbot/session/${sessionId}`),
 }

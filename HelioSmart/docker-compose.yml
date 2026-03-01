@@ -35,6 +35,9 @@ services:
       APP_NAME: HelioSmart
       APP_VERSION: 1.0.0
       DEBUG: "True"
+      OLLAMA_HOST: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     depends_on:
@@ -60,22 +63,8 @@ services:
     environment:
       - NODE_ENV=production
 
-  # Ollama LLM Service
-  ollama:
-    image: ollama/ollama:latest
-    container_name: heliosmart-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    environment:
-      - OLLAMA_ORIGINS=*
-
 volumes:
   postgres_data:
-    driver: local
-  ollama_data:
     driver: local
 
 networks:

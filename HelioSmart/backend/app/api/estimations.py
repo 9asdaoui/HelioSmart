@@ -1,17 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
 from app.core.database import get_db
 from app.models import Estimation
-from app.models.inverter import Inverter
 from app.schemas.estimation import (
     EstimationCreate,
     EstimationUpdate,
     EstimationResponse,
     EstimationListResponse,
-    PanelInfo,
-    InverterInfo,
 )
 
 router = APIRouter(prefix="/estimations", tags=["Estimations"])
@@ -55,9 +52,7 @@ def list_estimations(
 @router.get("/{estimation_id}", response_model=EstimationResponse)
 def get_estimation(estimation_id: int, db: Session = Depends(get_db)):
     """Get a specific estimation by ID"""
-    estimation = db.query(Estimation).options(
-        joinedload(Estimation.panel)
-    ).filter(
+    estimation = db.query(Estimation).filter(
         Estimation.id == estimation_id,
         Estimation.deleted_at.is_(None)
     ).first()
@@ -69,7 +64,7 @@ def get_estimation(estimation_id: int, db: Session = Depends(get_db)):
     json_fields = ['monthly_usage', 'monthly_cost', 'dc_monthly', 'poa_monthly', 
                    'solrad_monthly', 'ac_monthly', 'roof_polygon', 'usable_polygon',
                    'sam_masks', 'panel_grid', 'panel_positions', 'inverter_design',
-                   'inverter_combos', 'stringing_details', 'loss_breakdown']
+                   'inverter_combos', 'stringing_details']
     
     for field in json_fields:
         value = getattr(estimation, field, None)
@@ -79,23 +74,7 @@ def get_estimation(estimation_id: int, db: Session = Depends(get_db)):
             except (json.JSONDecodeError, TypeError):
                 pass
     
-    # Build response with resolved equipment details
-    result = EstimationResponse.model_validate(estimation)
-
-    # Attach panel info
-    if estimation.panel:
-        result.panel_info = PanelInfo.model_validate(estimation.panel)
-
-    # Attach inverter info — look up by model name from inverter_combos
-    inverter_model_name = None
-    if isinstance(estimation.inverter_combos, list) and estimation.inverter_combos:
-        inverter_model_name = estimation.inverter_combos[0].get('model')
-    if inverter_model_name:
-        inverter = db.query(Inverter).filter(Inverter.name == inverter_model_name).first()
-        if inverter:
-            result.inverter_info = InverterInfo.model_validate(inverter)
-
-    return result
+    return estimation
 
 
 @router.put("/{estimation_id}", response_model=EstimationResponse)

@@ -90,7 +90,6 @@ class Estimation(Base):
     optimum_tilt = Column(Float, nullable=True)
     optimum_azimuth = Column(Float, nullable=True)
     total_losses_percent = Column(Float, nullable=True)
-    loss_breakdown = Column(JSON, nullable=True)  # Detailed loss breakdown for waterfall chart
     
     # Roof type
     roof_type = Column(String(100), nullable=True)
@@ -108,9 +107,6 @@ class Estimation(Base):
     installation_type = Column(String(100), nullable=True)
     panel_orientation = Column(String(100), nullable=True)
     
-    # Site Plan Snapshot (base64 image taken from the wizard Step 8 canvas — the single source of truth)
-    site_plan_snapshot = Column(Text, nullable=True)
-
     # Inverter Design Data
     inverter_design = Column(JSON, nullable=True)
     inverter_combos = Column(JSON, nullable=True)

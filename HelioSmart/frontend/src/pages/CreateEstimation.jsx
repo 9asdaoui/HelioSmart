@@ -4,46 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { estimationsAPI, utilitiesAPI } from '@/services/api'
 import PolygonOverlay from '@/components/PolygonOverlay'
 import html2canvas from 'html2canvas'
-
-/**
- * Calculate distance between two lat/lng points using Haversine formula
- * Returns distance in meters
- */
-function haversineDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371000 // Earth's radius in meters
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLng = (lng2 - lng1) * Math.PI / 180
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng/2) * Math.sin(dLng/2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-  return R * c
-}
-
-/**
- * Calculate ACTUAL meters per pixel from Google Maps bounds
- * This is the most accurate method - uses real map bounds, not formulas
- */
-function calculateActualScale(map, mapDivWidth, html2canvasScale = 2) {
-  if (!map) return null
-  
-  const bounds = map.getBounds()
-  if (!bounds) return null
-  
-  const ne = bounds.getNorthEast()
-  const sw = bounds.getSouthWest()
-  
-  // Calculate horizontal distance across the map in meters
-  const horizontalMeters = haversineDistance(
-    (ne.lat() + sw.lat()) / 2, sw.lng(),  // West point at center latitude
-    (ne.lat() + sw.lat()) / 2, ne.lng()   // East point at center latitude
-  )
-  
-  // Actual pixels in captured image (html2canvas doubles resolution)
-  const actualPixelWidth = mapDivWidth * html2canvasScale
-  
-  return horizontalMeters / actualPixelWidth
-}
+import { MapPin, Zap, Building, Home, Sun, CheckCircle, ArrowLeft, ArrowRight, Send, Cpu } from 'lucide-react'
 
 export default function CreateEstimation() {
   const navigate = useNavigate()
@@ -63,23 +24,17 @@ export default function CreateEstimation() {
   const [customerEmail, setCustomerEmail] = useState('')
   const [visualizationData, setVisualizationData] = useState(null)
   const [estimationId, setEstimationId] = useState(null)
-  const [sitePlanSnapshot, setSitePlanSnapshot] = useState(null)
-  const [processingStep, setProcessingStep] = useState(0) // 0=upload, 1=SAM, 2=panels, 3=results
   const [errors, setErrors] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
   const [capturedRoofImage, setCapturedRoofImage] = useState(null)
   const [isCapturing, setIsCapturing] = useState(false)
-  const [capturedZoomLevel, setCapturedZoomLevel] = useState(null) // Store zoom at capture time
-  const [capturedScale, setCapturedScale] = useState(null) // Store actual m/pixel scale at capture time
-  
+
   const mapRef = useRef(null)
   const captureBoxRef = useRef(null)
   const [map, setMap] = useState(null)
   const [geocoder, setGeocoder] = useState(null)
-  const [mapCenter, setMapCenter] = useState({ lat: 34.0209, lng: -6.8417 }) // Default: Rabat
-  const [isLocating, setIsLocating] = useState(false)
-  
-  // Fetch utilities from database
+  const [mapCenter, setMapCenter] = useState({ lat: 31.6295, lng: -7.9811 })
+
   const { data: utilitiesData, isLoading: utilitiesLoading } = useQuery({
     queryKey: ['utilities'],
     queryFn: () => utilitiesAPI.getAll()
@@ -93,18 +48,16 @@ export default function CreateEstimation() {
       console.log('Full API Response:', response)
       console.log('Response Data:', response.data)
       console.log('Visualization Data:', response.data.visualization)
-      
+
       const estId = response.data.estimation_id || response.data.id
       setEstimationId(estId)
-      
-      // Check if visualization data is in response
+
       if (response.data.visualization) {
         console.log('Step 8 ACTIVATED - visualization data found')
         setVisualizationData(response.data.visualization)
-        setCurrentStep(8) // Go to AI detection results step
+        setCurrentStep(8)
       } else {
         console.log('No visualization data - redirecting to details page')
-        // No visualization data, go directly to details
         navigate(`/estimations/${estId}`)
       }
     },
@@ -113,27 +66,14 @@ export default function CreateEstimation() {
       setErrors({ submit: error.response?.data?.detail || error.message })
     }
   })
-  
-  // Advance fake processing steps every 30 s while step 7 is active
-  useEffect(() => {
-    if (currentStep !== 7) { setProcessingStep(0); return }
-    setProcessingStep(0)
-    const timers = [
-      setTimeout(() => setProcessingStep(1), 30000),
-      setTimeout(() => setProcessingStep(2), 60000),
-      setTimeout(() => setProcessingStep(3), 90000),
-    ]
-    return () => timers.forEach(clearTimeout)
-  }, [currentStep])
 
-  // Initialize Google Maps
   useEffect(() => {
     const initMap = () => {
       if (!window.google || !mapRef.current) return
-      
+
       const newMap = new window.google.maps.Map(mapRef.current, {
         center: mapCenter,
-        zoom: mapCenter.lat === 34.0209 ? 15 : 20, // City overview on first load, rooftop zoom after search
+        zoom: 18,
         mapTypeId: 'satellite',
         tilt: 0,
         heading: 0,
@@ -141,21 +81,21 @@ export default function CreateEstimation() {
         fullscreenControl: false,
         streetViewControl: false,
       })
-      
+
       setMap(newMap)
       setGeocoder(new window.google.maps.Geocoder())
     }
-    
+
     if (window.google) {
       initMap()
     } else {
       window.initMap = initMap
     }
   }, [])
-  
+
   const searchLocation = async () => {
     if (!geocoder || !searchQuery.trim()) return
-    
+
     try {
       const response = await new Promise((resolve, reject) => {
         geocoder.geocode({ address: searchQuery }, (results, status) => {
@@ -163,33 +103,15 @@ export default function CreateEstimation() {
           else reject(status)
         })
       })
-      
+
       const location = response.geometry.location
       map.setCenter(location)
-      map.setZoom(20)  // Consistent with initial zoom
+      map.setZoom(19)
       setMapCenter({ lat: location.lat(), lng: location.lng() })
     } catch (error) {
       console.error('Search failed:', error)
       setErrors({ ...errors, location: 'Location not found. Please try a different search.' })
     }
-  }
-  
-  const getUserGeolocation = () => {
-    if (!navigator.geolocation) return
-    setIsLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-        setMapCenter(latlng)
-        if (map) {
-          map.setCenter(latlng)
-          map.setZoom(20)
-        }
-        setIsLocating(false)
-      },
-      () => setIsLocating(false),
-      { enableHighAccuracy: true, timeout: 8000 }
-    )
   }
 
   const captureCurrentLocation = async () => {
@@ -197,83 +119,46 @@ export default function CreateEstimation() {
       setErrors({ ...errors, location: 'Map is not ready yet' })
       return
     }
-    
+
     setIsCapturing(true)
     const center = map.getCenter()
     const location = { lat: center.lat(), lng: center.lng() }
-    
+
     try {
       setErrors({ ...errors, location: null })
-      
-      // 1. Capture the satellite image from the map
+
       const mapElement = mapRef.current
       const canvas = await html2canvas(mapElement, {
         useCORS: true,
         allowTaint: true,
         logging: false,
-        scale: 2, // Higher quality
+        scale: 2,
       })
-      
-      // 2. Calculate the capture box dimensions (40% width, 4:3 aspect ratio, centered)
+
       const mapWidth = canvas.width
       const mapHeight = canvas.height
       const boxWidth = mapWidth * 0.4
-      const boxHeight = boxWidth * (3/4)
+      const boxHeight = boxWidth * (3 / 4)
       const boxX = (mapWidth - boxWidth) / 2
       const boxY = (mapHeight - boxHeight) / 2
-      
-      // 3. Crop to the capture box area
+
       const croppedCanvas = document.createElement('canvas')
       croppedCanvas.width = boxWidth
       croppedCanvas.height = boxHeight
       const ctx = croppedCanvas.getContext('2d')
       ctx.drawImage(canvas, boxX, boxY, boxWidth, boxHeight, 0, 0, boxWidth, boxHeight)
-      
-      // 4. Convert to base64
+
       const imageBase64 = croppedCanvas.toDataURL('image/png')
       setCapturedRoofImage(imageBase64)
-      
-      // 5. Calculate ACTUAL scale using map bounds and the real pixel width of the captured image
-      const currentZoom = map.getZoom()
-      setCapturedZoomLevel(currentZoom)
-      
-      const bounds = map.getBounds()
-      if (bounds) {
-        const ne = bounds.getNorthEast()
-        const sw = bounds.getSouthWest()
-        const centerLat = (ne.lat() + sw.lat()) / 2
-        
-        // W_meters: real-world width of the FULL map (NW→NE)
-        const fullMapMeters = haversineDistance(centerLat, sw.lng(), centerLat, ne.lng())
-        
-        // W_pixels of the FULL captured image (html2canvas scale:2 already doubles it — canvas.width === mapDivWidth * 2)
-        const fullImagePixels = mapWidth  // canvas.width, already 2x the DOM width
-        
-        // The cropped box is 40% of the full image width both in pixels and in meters
-        const captureBoxPixels = boxWidth   // boxWidth = mapWidth * 0.4
-        const captureBoxMeters = fullMapMeters * 0.4
-        
-        // scale_meters_per_pixel = W_meters / W_pixels  (image-width-based, not screen-div-based)
-        const actualScale = captureBoxMeters / captureBoxPixels
-        setCapturedScale(actualScale)
-        
-        console.log(`📐 FINAL CALIBRATED SCALE: ${actualScale.toFixed(6)} m/px`)
-        console.log(`   Map bounds span: ${fullMapMeters.toFixed(1)} m across ${fullImagePixels} px (full image)`)
-        console.log(`   Capture box:     ${captureBoxMeters.toFixed(1)} m across ${captureBoxPixels} px`)
-        console.log(`   Image covers:    ${(captureBoxPixels * actualScale).toFixed(1)} m × ${(boxHeight * actualScale).toFixed(1)} m`)
-        console.log(`   Total image area: ${(captureBoxPixels * actualScale * boxHeight * actualScale).toFixed(0)} m²`)
-      }
-      
-      console.log(`📸 Captured roof image at zoom ${currentZoom}`)
-      
-      // 6. Get address data via geocoding
+      console.log('Captured roof image:', imageBase64.substring(0, 100) + '...')
+
       const response = await new Promise((resolve, reject) => {
         geocoder.geocode({ location }, (results, status) => {
           if (status === 'OK' && results[0]) resolve(results[0])
           else reject(status)
         })
       })
-      
+
       const addressComponents = response.address_components
       const addressData = {
         latitude: location.lat,
@@ -285,7 +170,7 @@ export default function CreateEstimation() {
         zip_code: '',
         country: ''
       }
-      
+
       addressComponents.forEach(component => {
         const types = component.types
         if (types.includes('street_number') || types.includes('route')) {
@@ -304,7 +189,7 @@ export default function CreateEstimation() {
           addressData.country = component.long_name
         }
       })
-      
+
       setSelectedLocation(addressData)
       setErrors({ ...errors, location: null })
       setIsCapturing(false)
@@ -314,100 +199,71 @@ export default function CreateEstimation() {
       setIsCapturing(false)
     }
   }
-  
+
   const addSolarPoint = (e) => {
     if (placedPoints.length >= 6) {
       setErrors({ ...errors, roofPoints: 'Maximum 6 points allowed' })
       return
     }
-    
+
     const rect = e.target.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * 100
     const y = ((e.clientY - rect.top) / rect.height) * 100
-    
+
     setPlacedPoints([...placedPoints, { x, y }])
     setErrors({ ...errors, roofPoints: null })
   }
-  
+
   const nextStep = (step) => {
     const newErrors = {}
-    
+
     if (step === 1) {
-      if (!customerName.trim()) {
-        newErrors.customerName = 'Please enter customer name'
-      }
-      if (!customerEmail.trim() || !customerEmail.includes('@')) {
-        newErrors.customerEmail = 'Please enter a valid email address'
-      }
-      if (!selectedLocation) {
-        newErrors.location = 'Please capture a location first'
-      }
-      if (!capturedRoofImage) {
-        newErrors.location = 'Please capture your roof image by clicking the Capture Location button'
-      }
+      if (!customerName.trim()) newErrors.customerName = 'Please enter customer name'
+      if (!customerEmail.trim() || !customerEmail.includes('@')) newErrors.customerEmail = 'Please enter a valid email address'
+      if (!selectedLocation) newErrors.location = 'Please capture a location first'
+      if (!capturedRoofImage) newErrors.location = 'Please capture your roof image by clicking the Capture Location button'
     }
-    
     if (step === 2) {
-      if (!currentProfile) {
-        newErrors.energyProfile = 'Please select an energy usage profile'
-      }
+      if (!currentProfile) newErrors.energyProfile = 'Please select an energy usage profile'
     }
-    
     if (step === 3) {
-      if (!selectedProvider) {
-        newErrors.provider = 'Please select an energy provider'
-      }
+      if (!selectedProvider) newErrors.provider = 'Please select an energy provider'
     }
-    
     if (step === 4) {
-      if (!selectedRoofType) {
-        newErrors.roofType = 'Please select a roof type'
-      }
-      if (selectedRoofType === 'tilted' && !selectedRoofTilt) {
-        newErrors.roofTilt = 'Please select a roof tilt'
-      }
-      if (!selectedStories) {
-        newErrors.stories = 'Please select number of stories'
-      }
+      if (!selectedRoofType) newErrors.roofType = 'Please select a roof type'
+      if (selectedRoofType === 'tilted' && !selectedRoofTilt) newErrors.roofTilt = 'Please select a roof tilt'
+      if (!selectedStories) newErrors.stories = 'Please select number of stories'
     }
-    
-    if (step === 5 && placedPoints.length < 1) {
-      newErrors.roofPoints = 'Please mark at least 1 point on the roof area'
-    }
-    
+    if (step === 5 && placedPoints.length < 1) newErrors.roofPoints = 'Please mark at least 1 point on the roof area'
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
     }
-    
+
     setErrors({})
     setCurrentStep(step + 1)
   }
-  
+
   const prevStep = (step) => {
     setCurrentStep(step - 1)
   }
-  
+
   const submitForm = async () => {
     if (!map) {
       setErrors({ submit: 'Map is not ready' })
       return
     }
-    
-    // Validate that we have a captured roof image
     if (!capturedRoofImage) {
       setErrors({ submit: 'Please capture your roof location first (Step 1)' })
       return
     }
-    
+
     setErrors({})
-    
+
     const formData = {
-      // Customer info
       customer_name: customerName,
       email: customerEmail,
-      
-      // Location data
       latitude: selectedLocation?.latitude || 0,
       longitude: selectedLocation?.longitude || 0,
       street: selectedLocation?.street || '',
@@ -416,376 +272,347 @@ export default function CreateEstimation() {
       zip_code: selectedLocation?.zip_code || '',
       country: selectedLocation?.country || '',
       search_query: selectedLocation?.address || '',
-      
-      // Satellite image from capture
       satellite_image: capturedRoofImage,
-      // Use the ACTUAL scale derived from map bounds + real image pixel width at capture time
-      scale_meters_per_pixel: (() => {
-        if (capturedScale) {
-          console.log(`📐 FINAL CALIBRATED SCALE: ${capturedScale.toFixed(6)} m/px (bounds-based, image-width corrected)`)
-          return capturedScale
-        }
-        // Fallback: OSM tile-size formula — less accurate but never NaN
-        const lat = selectedLocation?.latitude || mapCenter.lat
-        const zoom = capturedZoomLevel || map?.getZoom() || 20
-        // Full-image scale (html2canvas scale:2 doubles pixel count)
-        const fullScale = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom) / 2
-        // Capture box is 40% of the image, so scale is the same (pixels and meters both shrink equally)
-        console.log(`⚠️ FALLBACK SCALE: ${fullScale.toFixed(6)} m/px (no captured bounds — re-capture recommended)`)
-        return fullScale
-      })(),
-      zoom_level: capturedZoomLevel || map?.getZoom() || 20,
-      
-      // Roof points from Step 5 (used as SAM prompts)
-      roof_points: placedPoints.map(p => ({ x: p.x, y: p.y })),
-      
-      // Energy usage
+      scale_meters_per_pixel: 0.3,
+      zoom_level: map?.getZoom() || 18,
       monthly_bill: annualCost / 12,
-      usage_pattern: currentProfile, // 'balanced', 'summer', 'winter'
-      
-      // Provider
-      provider: selectedProvider?.id || 1, // utility_id
-      
-      // Property details
+      usage_pattern: currentProfile,
+      provider: selectedProvider?.id || 1,
       roof_type: selectedRoofType,
       roof_tilt: selectedRoofTilt || '20',
       building_stories: selectedStories === 'custom' ? parseInt(customStories) : parseInt(selectedStories),
-      
-      // Coverage percentage
       coverage_percentage: 80.0,
     }
-    
+
     createMutation.mutate(formData)
   }
-  
+
   const energyProfiles = [
     { id: 'low', icon: '🌱', label: 'Low Usage', description: 'Small home, minimal appliances' },
     { id: 'balanced', icon: '🏠', label: 'Balanced', description: 'Average household consumption' },
     { id: 'high', icon: '⚡', label: 'High Usage', description: 'Large home, many appliances' }
   ]
-  
+
   const roofTypes = [
     { id: 'flat', icon: '▬', name: 'Flat Roof', description: 'Minimal slope (0-10°)' },
     { id: 'tilted', icon: '◢', name: 'Tilted Roof', description: 'Angled roof surface' }
   ]
-  
+
   const roofTiltOptions = [
     { value: '15', label: '15°' },
     { value: '25', label: '25°' },
     { value: '35', label: '35°' },
     { value: '45', label: '45°' }
   ]
-  
+
   const storiesOptions = [
     { value: '1', label: '1 Story' },
     { value: '2', label: '2 Stories' },
     { value: '3', label: '3 Stories' },
     { value: 'custom', label: 'Custom' }
   ]
-  
+
+  const stepLabels = ['Location', 'Energy', 'Provider', 'Property', 'Points', 'Review', 'Processing', 'Results']
+  const stepIcons = [MapPin, Zap, Building, Home, Sun, CheckCircle, Cpu, CheckCircle]
+
   return (
-    <div className="p-4 md:p-8" style={{ background: 'linear-gradient(135deg, #f0f9ff 0%, #e1f5fe 100%)', minHeight: '100vh' }}>
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-blue-600 mb-2">Solar Estimation Tool</h1>
-          <p className="text-gray-600">Design your perfect solar energy system in 6 easy steps</p>
+    <div className="min-h-screen bg-slate-50 py-8 animate-fade-in">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6">
+        {/* Header */}
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-display font-bold gradient-text mb-2">Solar Estimation Tool</h1>
+          <p className="text-slate-500">Design your perfect solar energy system in 6 easy steps</p>
         </div>
-        
-        <div className="flex justify-between items-center mb-8 px-2">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((step) => (
-            <div key={step} className="flex items-center flex-1">
-              <div className="flex flex-col items-center">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                  currentStep >= step
-                    ? currentStep === step ? 'bg-blue-600 text-white' : 'bg-green-500 text-white'
-                    : 'bg-gray-200 text-gray-500'
-                }`}>
-                  {currentStep > step ? '✓' : step}
+
+        {/* Stepper */}
+        <div className="flex justify-between items-center mb-10 px-2">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((step) => {
+            const Icon = stepIcons[step - 1]
+            return (
+              <div key={step} className="flex items-center flex-1">
+                <div className="flex flex-col items-center">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 ${currentStep > step
+                      ? 'bg-eco-500 text-white shadow-glow-eco'
+                      : currentStep === step
+                        ? 'bg-gradient-to-br from-solar-400 to-primary-500 text-white shadow-glow-sm'
+                        : 'bg-slate-200 text-slate-400'
+                    }`}>
+                    {currentStep > step ? '✓' : <Icon className="w-4 h-4" />}
+                  </div>
+                  <span className="text-xs mt-2 text-slate-500 hidden md:block font-medium">
+                    {stepLabels[step - 1]}
+                  </span>
                 </div>
-                <span className="text-xs mt-2 text-gray-600 hidden md:block">
-                  {step === 1 && 'Location'}
-                  {step === 2 && 'Energy'}
-                  {step === 3 && 'Provider'}
-                  {step === 4 && 'Property'}
-                  {step === 5 && 'Points'}
-                  {step === 6 && 'Review'}
-                  {step === 7 && 'Processing'}
-                  {step === 8 && 'Results'}
-                </span>
+                {step < 8 && (
+                  <div className={`flex-1 h-0.5 mx-2 rounded-full transition-all duration-500 ${currentStep > step ? 'bg-eco-400' : 'bg-slate-200'
+                    }`} />
+                )}
               </div>
-              {step < 8 && (
-                <div className="flex-1 h-1 mx-2" style={{ backgroundColor: currentStep > step ? '#22c55e' : '#e5e7eb' }} />
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
-        
+
+        {/* Step 1: Location */}
         {currentStep === 1 && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Step 1: Customer & Location</h2>
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <div className="p-2 bg-solar-100 rounded-xl"><MapPin className="w-5 h-5 text-solar-600" /></div>
+              Customer & Location
+            </h2>
             <div className="space-y-6">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => { setCustomerName(e.target.value); setErrors({ ...errors, customerName: null }) }}
-                    placeholder="Enter customer name"
-                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${errors.customerName ? 'border-red-500' : 'border-gray-300'}`}
-                    required
-                  />
+                  <label className="label">Customer Name *</label>
+                  <input type="text" value={customerName} onChange={(e) => { setCustomerName(e.target.value); setErrors({ ...errors, customerName: null }) }} placeholder="Enter customer name" className={`input-field ${errors.customerName ? 'border-red-400 ring-2 ring-red-100' : ''}`} required />
                   {errors.customerName && <p className="text-red-500 text-sm mt-1">{errors.customerName}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                  <input
-                    type="email"
-                    value={customerEmail}
-                    onChange={(e) => { setCustomerEmail(e.target.value); setErrors({ ...errors, customerEmail: null }) }}
-                    placeholder="customer@example.com"
-                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${errors.customerEmail ? 'border-red-500' : 'border-gray-300'}`}
-                    required
-                  />
+                  <label className="label">Email *</label>
+                  <input type="email" value={customerEmail} onChange={(e) => { setCustomerEmail(e.target.value); setErrors({ ...errors, customerEmail: null }) }} placeholder="customer@example.com" className={`input-field ${errors.customerEmail ? 'border-red-400 ring-2 ring-red-100' : ''}`} required />
                   {errors.customerEmail && <p className="text-red-500 text-sm mt-1">{errors.customerEmail}</p>}
                 </div>
               </div>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Search Location</label>
+
+              <div>
+                <label className="label">Search Location</label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && searchLocation()}
-                    placeholder="Search: Marrakesh, Gueliz, Morocco..."
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  <button type="button" onClick={searchLocation} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 rounded-lg transition-colors">
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchLocation()} placeholder="Search: Marrakesh, Gueliz, Morocco..." className="input-field flex-1" />
+                  <button type="button" onClick={searchLocation} className="btn-primary px-6">
                     🔍 Search
                   </button>
                 </div>
               </div>
-              
-              <div className="relative" style={{ height: '400px', borderRadius: '0.5rem', overflow: 'hidden' }}>
+
+              <div className="relative rounded-2xl overflow-hidden shadow-glass-lg" style={{ height: '400px' }}>
                 <div ref={mapRef} style={{ width: '100%', height: '100%' }}></div>
-                {/* Get Current Location button */}
-                <button
-                  type="button"
-                  onClick={getUserGeolocation}
-                  disabled={isLocating}
-                  title="Get current location"
-                  className="absolute top-2 right-2 z-10 bg-white hover:bg-gray-50 border border-gray-300 shadow text-gray-700 rounded-md px-2.5 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-60"
-                >
-                  {isLocating ? (
-                    <svg className="w-3.5 h-3.5 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  ) : (
-                    <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path strokeLinecap="round" d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-                  )}
-                  {isLocating ? 'Locating…' : 'My Location'}
-                </button>
+                <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-sm text-white text-xs px-4 py-2 rounded-full font-medium border border-white/10">
+                  📍 Center your roof in the box, then click Capture
+                </div>
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                   <div className="relative" style={{ width: '40%', aspectRatio: '4/3' }}>
-                    <div className="absolute inset-0 border-3 border-dashed border-yellow-400 rounded-lg" style={{ borderWidth: '3px', boxShadow: '0 0 0 3px rgba(250, 204, 21, 0.4), inset 0 0 20px rgba(0,0,0,0.1)' }}>
-                      <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-gray-900 text-xs px-3 py-1 rounded font-bold whitespace-nowrap shadow">⬇ Fit roof here ⬇</div>
+                    <div className="absolute inset-0 border-3 border-dashed border-solar-400 rounded-xl" style={{ borderWidth: '3px', boxShadow: '0 0 0 3px rgba(251, 191, 36, 0.3), inset 0 0 20px rgba(0,0,0,0.1)' }}>
+                      <div className="absolute -top-7 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-solar-400 to-primary-500 text-white text-xs px-4 py-1.5 rounded-full font-bold whitespace-nowrap shadow-lg">⬇ Fit roof here ⬇</div>
                     </div>
                   </div>
                 </div>
               </div>
-              <button type="button" onClick={captureCurrentLocation} disabled={isCapturing} className={`w-full font-semibold py-3 px-6 rounded-lg transition-colors ${isCapturing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} text-white`}>
+
+              <button type="button" onClick={captureCurrentLocation} disabled={isCapturing} className={`w-full font-semibold py-3.5 rounded-xl transition-all text-white ${isCapturing ? 'bg-slate-400 cursor-not-allowed' : 'btn-primary'}`}>
                 {isCapturing ? '⏳ Capturing...' : '📸 Capture Location'}
               </button>
-              
+
               {errors.location && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <p className="text-red-800 font-semibold">⚠️ {errors.location}</p>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full" />
+                  <p className="text-red-700 font-semibold text-sm">{errors.location}</p>
                 </div>
               )}
-              
+
               {selectedLocation && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <p className="text-green-800 font-semibold">✓ Location Captured</p>
-                  <p className="text-sm text-gray-600 mt-1">{selectedLocation.address}</p>
+                <div className="bg-eco-50 border border-eco-200 rounded-xl p-4 flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-eco-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-eco-800 font-semibold">Location Captured</p>
+                    <p className="text-sm text-slate-600 mt-0.5">{selectedLocation.address}</p>
+                  </div>
                 </div>
               )}
             </div>
-            <div className="flex justify-end mt-6">
-              <button type="button" onClick={() => nextStep(1)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">Next →</button>
+            <div className="flex justify-end mt-8">
+              <button type="button" onClick={() => nextStep(1)} className="btn-primary px-8">
+                Next <ArrowRight className="w-4 h-4 ml-2" />
+              </button>
             </div>
           </div>
         )}
-        
+
+        {/* Step 2: Energy */}
         {currentStep === 2 && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Step 2: Energy Usage</h2>
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <div className="p-2 bg-solar-100 rounded-xl"><Zap className="w-5 h-5 text-solar-600" /></div>
+              Energy Usage
+            </h2>
             {errors.energyProfile && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-                <p className="text-red-800">{errors.energyProfile}</p>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-red-700 text-sm">{errors.energyProfile}</p>
               </div>
             )}
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-4">Select Your Energy Profile</label>
+                <label className="label">Select Your Energy Profile</label>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {energyProfiles.map((profile) => (
-                    <div key={profile.id} onClick={() => setCurrentProfile(profile.id)} className={`cursor-pointer border-2 rounded-lg p-6 text-center transition-all ${currentProfile === profile.id ? 'border-blue-500 bg-blue-50 shadow-lg' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}>
+                    <div key={profile.id} onClick={() => setCurrentProfile(profile.id)} className={currentProfile === profile.id ? 'selection-card-active' : 'selection-card'}>
                       <div className="text-4xl mb-3">{profile.icon}</div>
-                      <h3 className="font-semibold text-gray-800 mb-1">{profile.label}</h3>
-                      <p className="text-xs text-gray-600">{profile.description}</p>
+                      <h3 className="font-display font-bold text-slate-800 mb-1">{profile.label}</h3>
+                      <p className="text-xs text-slate-500">{profile.description}</p>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="grid md:grid-cols-2 gap-6">
+              <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Annual Usage (kWh)</label>
-                  <input type="number" value={annualUsage} onChange={(e) => setAnnualUsage(parseFloat(e.target.value))} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <label className="label">Annual Usage (kWh)</label>
+                  <input type="number" value={annualUsage} onChange={(e) => setAnnualUsage(parseFloat(e.target.value))} className="input-field" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Annual Cost (MAD)</label>
-                  <input type="number" value={annualCost} onChange={(e) => setAnnualCost(parseFloat(e.target.value))} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <label className="label">Annual Cost (MAD)</label>
+                  <input type="number" value={annualCost} onChange={(e) => setAnnualCost(parseFloat(e.target.value))} className="input-field" />
                 </div>
               </div>
             </div>
-            <div className="flex justify-between mt-6">
-              <button type="button" onClick={() => prevStep(2)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-6 rounded-lg transition-colors">← Back</button>
-              <button type="button" onClick={() => nextStep(2)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">Next →</button>
+            <div className="flex justify-between mt-8">
+              <button type="button" onClick={() => prevStep(2)} className="btn-secondary"><ArrowLeft className="w-4 h-4 mr-2" /> Back</button>
+              <button type="button" onClick={() => nextStep(2)} className="btn-primary">Next <ArrowRight className="w-4 h-4 ml-2" /></button>
             </div>
           </div>
         )}
-        
+
+        {/* Step 3: Provider */}
         {currentStep === 3 && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Step 3: Energy Provider</h2>
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <div className="p-2 bg-solar-100 rounded-xl"><Building className="w-5 h-5 text-solar-600" /></div>
+              Energy Provider
+            </h2>
             {errors.provider && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-                <p className="text-red-800">{errors.provider}</p>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-red-700 text-sm">{errors.provider}</p>
               </div>
             )}
             {utilitiesLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading utilities...</div>
+              <div className="text-center py-12"><div className="spinner-lg mx-auto mb-3"></div><p className="text-slate-500">Loading utilities...</p></div>
             ) : utilities.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No utilities available</div>
+              <div className="text-center py-12 text-slate-500">No utilities available</div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {utilities.map((utility) => (
-                  <div key={utility.id} onClick={() => setSelectedProvider(utility)} className={`cursor-pointer border-2 rounded-lg p-4 transition-all ${selectedProvider?.id === utility.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
+                  <div key={utility.id} onClick={() => setSelectedProvider(utility)} className={`cursor-pointer rounded-2xl p-5 transition-all duration-200 border-2 ${selectedProvider?.id === utility.id ? 'border-solar-400 bg-solar-50 shadow-glow-sm' : 'border-slate-200 hover:border-slate-300 bg-white'}`}>
                     <div className="flex items-center">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mr-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-solar-400 to-primary-500 rounded-xl flex items-center justify-center mr-4 shadow-sm">
                         <span className="text-2xl">⚡</span>
                       </div>
                       <div>
-                        <h3 className="font-semibold text-gray-800">{utility.name}</h3>
-                        <p className="text-sm text-gray-600">{utility.city}, {utility.state}</p>
+                        <h3 className="font-display font-bold text-slate-900">{utility.name}</h3>
+                        <p className="text-sm text-slate-500">{utility.city}, {utility.state}</p>
                       </div>
+                      {selectedProvider?.id === utility.id && <CheckCircle className="w-5 h-5 text-eco-500 ml-auto" />}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            <div className="flex justify-between mt-6">
-              <button type="button" onClick={() => prevStep(3)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-6 rounded-lg transition-colors">← Back</button>
-              <button type="button" onClick={() => nextStep(3)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">Next →</button>
+            <div className="flex justify-between mt-8">
+              <button type="button" onClick={() => prevStep(3)} className="btn-secondary"><ArrowLeft className="w-4 h-4 mr-2" /> Back</button>
+              <button type="button" onClick={() => nextStep(3)} className="btn-primary">Next <ArrowRight className="w-4 h-4 ml-2" /></button>
             </div>
           </div>
         )}
-        
+
+        {/* Step 4: Property Details */}
         {currentStep === 4 && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Step 4: Property Details</h2>
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <div className="p-2 bg-solar-100 rounded-xl"><Home className="w-5 h-5 text-solar-600" /></div>
+              Property Details
+            </h2>
             {(errors.roofType || errors.roofTilt || errors.stories) && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-                <p className="text-red-800">{errors.roofType || errors.roofTilt || errors.stories}</p>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-red-700 text-sm">{errors.roofType || errors.roofTilt || errors.stories}</p>
               </div>
             )}
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-4">Roof Type</label>
+                <label className="label">Roof Type</label>
                 <div className="grid grid-cols-2 gap-4">
                   {roofTypes.map((type) => (
-                    <div key={type.id} onClick={() => setSelectedRoofType(type.id)} className={`cursor-pointer border-2 rounded-lg p-6 text-center transition-all ${selectedRoofType === type.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
+                    <div key={type.id} onClick={() => setSelectedRoofType(type.id)} className={selectedRoofType === type.id ? 'selection-card-active' : 'selection-card'}>
                       <div className="text-4xl mb-2">{type.icon}</div>
-                      <h3 className="font-semibold text-gray-800 mb-1">{type.name}</h3>
-                      <p className="text-xs text-gray-600">{type.description}</p>
+                      <h3 className="font-display font-bold text-slate-800 mb-1">{type.name}</h3>
+                      <p className="text-xs text-slate-500">{type.description}</p>
                     </div>
                   ))}
                 </div>
               </div>
               {selectedRoofType === 'tilted' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-4">Roof Tilt Angle</label>
-                  <div className="grid grid-cols-4 gap-4">
+                  <label className="label">Roof Tilt Angle</label>
+                  <div className="grid grid-cols-4 gap-3">
                     {roofTiltOptions.map((option) => (
-                      <div key={option.value} onClick={() => setSelectedRoofTilt(option.value)} className={`cursor-pointer border-2 rounded-lg p-4 text-center transition-all ${selectedRoofTilt === option.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
-                        <div className="text-2xl font-bold text-gray-800">{option.label}</div>
+                      <div key={option.value} onClick={() => setSelectedRoofTilt(option.value)} className={`cursor-pointer rounded-xl p-4 text-center border-2 transition-all duration-200 ${selectedRoofTilt === option.value ? 'border-solar-400 bg-solar-50 shadow-glow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
+                        <div className="text-xl font-display font-bold text-slate-800">{option.label}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-4">Number of Stories</label>
-                <div className="grid grid-cols-4 gap-4">
+                <label className="label">Number of Stories</label>
+                <div className="grid grid-cols-4 gap-3">
                   {storiesOptions.map((option) => (
-                    <div key={option.value} onClick={() => { setSelectedStories(option.value); if (option.value !== 'custom') setCustomStories('') }} className={`cursor-pointer border-2 rounded-lg p-4 text-center transition-all ${selectedStories === option.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
-                      <div className="text-xl font-bold text-gray-800">{option.label}</div>
+                    <div key={option.value} onClick={() => { setSelectedStories(option.value); if (option.value !== 'custom') setCustomStories('') }} className={`cursor-pointer rounded-xl p-4 text-center border-2 transition-all duration-200 ${selectedStories === option.value ? 'border-solar-400 bg-solar-50 shadow-glow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
+                      <div className="text-sm font-display font-bold text-slate-800">{option.label}</div>
                     </div>
                   ))}
                 </div>
                 {selectedStories === 'custom' && (
-                  <input type="number" min="1" value={customStories} onChange={(e) => setCustomStories(e.target.value)} placeholder="Enter number of stories" className="mt-4 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" min="1" value={customStories} onChange={(e) => setCustomStories(e.target.value)} placeholder="Enter number of stories" className="input-field mt-4" />
                 )}
               </div>
             </div>
-            <div className="flex justify-between mt-6">
-              <button type="button" onClick={() => prevStep(4)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-6 rounded-lg transition-colors">← Back</button>
-              <button type="button" onClick={() => nextStep(4)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">Next →</button>
+            <div className="flex justify-between mt-8">
+              <button type="button" onClick={() => prevStep(4)} className="btn-secondary"><ArrowLeft className="w-4 h-4 mr-2" /> Back</button>
+              <button type="button" onClick={() => nextStep(4)} className="btn-primary">Next <ArrowRight className="w-4 h-4 ml-2" /></button>
             </div>
           </div>
         )}
-        
+
+        {/* Step 5: Roof Points */}
         {currentStep === 5 && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Step 5: Mark Your Roof Area</h2>
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <div className="p-2 bg-solar-100 rounded-xl"><Sun className="w-5 h-5 text-solar-600" /></div>
+              Mark Your Roof Area
+            </h2>
             {errors.roofPoints && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-                <p className="text-red-800">{errors.roofPoints}</p>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-red-700 text-sm">{errors.roofPoints}</p>
               </div>
             )}
             <div className="grid md:grid-cols-2 gap-6">
               <div>
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-5 mb-4">
-                  <p className="text-base text-blue-900 font-bold mb-3">📋 Instructions:</p>
-                  <ol className="text-sm text-blue-800 space-y-2 list-decimal list-inside">
-                    <li className="font-medium">Click on the <span className="text-indigo-600 font-bold">roof area</span> in your captured image</li>
-                    <li>Mark points <span className="font-bold">on your roof</span> to help our AI identify it accurately</li>
-                    <li>Place up to <span className="font-bold">6 points</span> on different parts of the roof</li>
-                    <li className="text-green-700 font-semibold">✨ These points guide our AI to detect your exact roof boundaries</li>
+                <div className="bg-gradient-to-br from-helio-50 to-helio-100 border border-helio-200 rounded-2xl p-5 mb-4">
+                  <p className="text-base text-helio-900 font-bold mb-3">📋 Instructions:</p>
+                  <ol className="text-sm text-helio-800 space-y-2 list-decimal list-inside">
+                    <li className="font-medium">Click inside the <span className="text-primary-600 font-bold">roof box</span> on the right</li>
+                    <li>Mark the corners and key points of your roof area</li>
+                    <li>Place up to <span className="font-bold">6 points</span> to outline your roof</li>
+                    <li className="text-red-600 font-semibold">⚠️ Only click inside the box</li>
                   </ol>
-                  <div className="mt-3 bg-white rounded p-3 border border-blue-200">
-                    <p className="text-xs text-gray-700"><span className="font-semibold">🎯 Tip:</span> Place points in different corners and areas of your roof for the best AI detection results.</p>
+                  <div className="mt-3 bg-white/80 rounded-xl p-3 border border-helio-200">
+                    <p className="text-xs text-slate-700"><span className="font-semibold">💡 Tip:</span> These points will help our AI detect the exact roof boundaries.</p>
                   </div>
                 </div>
-                <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-gray-700 mb-2">Points Placed: {placedPoints.length} / 6</p>
-                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 transition-all" style={{ width: `${(placedPoints.length / 6) * 100}%` }}></div>
+                <div className="card">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">Points Placed: {placedPoints.length} / 6</p>
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-solar-400 to-eco-500 rounded-full transition-all duration-300" style={{ width: `${(placedPoints.length / 6) * 100}%` }}></div>
                   </div>
                   {placedPoints.length > 0 && (
-                    <p className="text-xs text-green-600 mt-2">✓ {placedPoints.length} point{placedPoints.length > 1 ? 's' : ''} marked</p>
+                    <p className="text-xs text-eco-600 mt-2 font-medium">✓ {placedPoints.length} point{placedPoints.length > 1 ? 's' : ''} marked</p>
                   )}
                 </div>
               </div>
               <div className="relative">
-                <div className="absolute -top-2 left-0 right-0 text-center">
-                  <span className="bg-indigo-600 text-white text-xs px-3 py-1 rounded-full font-semibold shadow-lg">↓ Your Captured Roof Image ↓</span>
+                <div className="absolute -top-2 left-0 right-0 text-center z-10">
+                  <span className="bg-gradient-to-r from-helio-600 to-helio-700 text-white text-xs px-4 py-1.5 rounded-full font-bold shadow-lg">↓ Your Captured Roof Image ↓</span>
                 </div>
                 {capturedRoofImage ? (
-                  <div onClick={addSolarPoint} className="relative border-4 border-indigo-500 rounded-lg overflow-hidden cursor-crosshair shadow-xl" style={{ aspectRatio: '4/3' }}>
+                  <div onClick={addSolarPoint} className="relative border-4 border-helio-500 rounded-2xl overflow-hidden cursor-crosshair shadow-glass-lg mt-4" style={{ aspectRatio: '4/3' }}>
                     <img src={capturedRoofImage} alt="Captured roof" className="w-full h-full object-cover" />
                     {placedPoints.map((point, index) => (
-                      <div key={index} className="absolute w-6 h-6 bg-blue-500 border-2 border-white rounded-full transform -translate-x-1/2 -translate-y-1/2 shadow-lg" style={{ left: `${point.x}%`, top: `${point.y}%`, boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.2)' }}>
+                      <div key={index} className="absolute w-6 h-6 bg-gradient-to-br from-solar-400 to-primary-500 border-2 border-white rounded-full transform -translate-x-1/2 -translate-y-1/2 shadow-lg" style={{ left: `${point.x}%`, top: `${point.y}%`, boxShadow: '0 0 0 4px rgba(251, 191, 36, 0.3)' }}>
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className="w-2 h-2 bg-white rounded-full"></div>
                         </div>
@@ -793,171 +620,125 @@ export default function CreateEstimation() {
                     ))}
                   </div>
                 ) : (
-                  <div className="relative border-4 border-red-400 rounded-lg overflow-hidden shadow-xl bg-red-50 flex items-center justify-center" style={{ aspectRatio: '4/3' }}>
-                    <div className="text-center p-4">
+                  <div className="relative border-4 border-red-300 rounded-2xl overflow-hidden shadow-glass bg-red-50 flex items-center justify-center mt-4" style={{ aspectRatio: '4/3' }}>
+                    <div className="text-center p-6">
                       <p className="text-red-600 font-semibold text-lg mb-2">⚠️ No Image Captured</p>
-                      <p className="text-red-500 text-sm">Please go back to Step 1 and click "Capture Location" to capture your roof image.</p>
+                      <p className="text-red-500 text-sm">Go back to Step 1 and click "Capture Location"</p>
                     </div>
                   </div>
                 )}
               </div>
             </div>
-            <div className="flex justify-between mt-6">
-              <button type="button" onClick={() => prevStep(5)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-6 rounded-lg transition-colors">← Back</button>
-              <button type="button" onClick={() => nextStep(5)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">Next →</button>
+            <div className="flex justify-between mt-8">
+              <button type="button" onClick={() => prevStep(5)} className="btn-secondary"><ArrowLeft className="w-4 h-4 mr-2" /> Back</button>
+              <button type="button" onClick={() => nextStep(5)} className="btn-primary">Next <ArrowRight className="w-4 h-4 ml-2" /></button>
             </div>
           </div>
         )}
-        
+
+        {/* Step 6: Review */}
         {currentStep === 6 && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Step 6: Review Your Estimation</h2>
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <div className="p-2 bg-eco-100 rounded-xl"><CheckCircle className="w-5 h-5 text-eco-600" /></div>
+              Review Your Estimation
+            </h2>
             {errors.submit && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-                <p className="text-red-800 font-semibold">⚠️ Submission Error</p>
-                <p className="text-sm text-red-700 mt-1">{errors.submit}</p>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-red-700 font-semibold text-sm">⚠️ {errors.submit}</p>
               </div>
             )}
             <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-700 mb-3">Customer Information</h3>
-                <p className="text-sm text-gray-600">Name: {customerName}</p>
-                <p className="text-sm text-gray-600">Email: {customerEmail}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-700 mb-3">Location</h3>
-                <p className="text-sm text-gray-600">{selectedLocation?.address}</p>
-                <p className="text-xs text-gray-500 mt-1">Lat: {selectedLocation?.latitude?.toFixed(6)}, Lng: {selectedLocation?.longitude?.toFixed(6)}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-700 mb-3">Energy Usage</h3>
-                <p className="text-sm text-gray-600">Profile: {currentProfile}</p>
-                <p className="text-sm text-gray-600">Annual Usage: {annualUsage} kWh</p>
-                <p className="text-sm text-gray-600">Annual Cost: {annualCost} MAD</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-700 mb-3">Energy Provider</h3>
-                <p className="text-sm text-gray-600">{selectedProvider?.name}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-700 mb-3">Property Details</h3>
-                <p className="text-sm text-gray-600">Roof Type: {selectedRoofType}</p>
-                {selectedRoofType === 'tilted' && <p className="text-sm text-gray-600">Roof Tilt: {selectedRoofTilt}°</p>}
-                <p className="text-sm text-gray-600">Stories: {selectedStories === 'custom' ? customStories : selectedStories}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-700 mb-3">Solar System</h3>
-                <p className="text-sm text-gray-600">Panel Points: {placedPoints.length}</p>
-                <p className="text-sm text-gray-600">Estimated Panels: {placedPoints.length * 3}</p>
-                <p className="text-sm text-gray-600">Estimated Capacity: {(placedPoints.length * 3 * 0.350).toFixed(2)} kW</p>
-              </div>
+              {[
+                { title: 'Customer Information', content: [`Name: ${customerName}`, `Email: ${customerEmail}`] },
+                { title: 'Location', content: [selectedLocation?.address, `Lat: ${selectedLocation?.latitude?.toFixed(6)}, Lng: ${selectedLocation?.longitude?.toFixed(6)}`] },
+                { title: 'Energy Usage', content: [`Profile: ${currentProfile}`, `Annual Usage: ${annualUsage} kWh`, `Annual Cost: ${annualCost} MAD`] },
+                { title: 'Energy Provider', content: [selectedProvider?.name] },
+                { title: 'Property Details', content: [`Roof Type: ${selectedRoofType}`, selectedRoofType === 'tilted' ? `Roof Tilt: ${selectedRoofTilt}°` : null, `Stories: ${selectedStories === 'custom' ? customStories : selectedStories}`].filter(Boolean) },
+                { title: 'Solar System', content: [`Panel Points: ${placedPoints.length}`, `Estimated Panels: ${placedPoints.length * 3}`, `Estimated Capacity: ${(placedPoints.length * 3 * 0.350).toFixed(2)} kW`] },
+              ].map((section, i) => (
+                <div key={i} className="bg-slate-50 rounded-xl p-5 border border-slate-100">
+                  <h3 className="font-display font-bold text-slate-800 mb-2">{section.title}</h3>
+                  {section.content.map((line, j) => (
+                    <p key={j} className="text-sm text-slate-600">{line}</p>
+                  ))}
+                </div>
+              ))}
             </div>
-            <div className="flex justify-between mt-6">
-              <button type="button" onClick={() => prevStep(6)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-6 rounded-lg transition-colors">← Back</button>
-              <button type="button" onClick={() => { submitForm(); setCurrentStep(7); }} disabled={createMutation.isPending} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2">
-                <span>🚀</span>
-                <span>Submit Estimation</span>
+            <div className="flex justify-between mt-8">
+              <button type="button" onClick={() => prevStep(6)} className="btn-secondary"><ArrowLeft className="w-4 h-4 mr-2" /> Back</button>
+              <button type="button" onClick={() => { submitForm(); setCurrentStep(7); }} disabled={createMutation.isPending} className="btn-eco px-8 py-3">
+                <Send className="w-4 h-4 mr-2" />
+                Submit Estimation
               </button>
             </div>
           </div>
         )}
 
-        {/* Step 7: Processing Animation */}
+        {/* Step 7: Processing */}
         {currentStep === 7 && (
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Step 7: AI Processing</h2>
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-8 border border-blue-200">
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 text-center">AI Processing</h2>
+            <div className="bg-gradient-to-br from-helio-50 to-slate-100 rounded-2xl p-10 border border-helio-200">
               <div className="flex flex-col items-center justify-center space-y-6">
                 <div className="relative w-24 h-24">
-                  <div className="absolute inset-0 border-4 border-blue-200 rounded-full"></div>
-                  <div className="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
-                  <div className="absolute inset-3 bg-blue-100 rounded-full flex items-center justify-center">
+                  <div className="absolute inset-0 border-4 border-slate-200 rounded-full"></div>
+                  <div className="absolute inset-0 border-4 border-solar-500 rounded-full border-t-transparent animate-spin"></div>
+                  <div className="absolute inset-3 bg-gradient-to-br from-solar-100 to-primary-100 rounded-full flex items-center justify-center">
                     <span className="text-4xl">☀️</span>
                   </div>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-blue-800 mb-2">Analyzing Your Roof...</p>
-                  <p className="text-gray-600">Our AI is detecting roof boundaries and calculating optimal panel placement</p>
+                  <p className="text-2xl font-display font-bold text-slate-900 mb-2">Analyzing Your Roof...</p>
+                  <p className="text-slate-500">Our AI is detecting roof boundaries and calculating optimal panel placement</p>
                 </div>
               </div>
               <div className="mt-8 space-y-4 max-w-md mx-auto">
                 {[
-                  { label: 'Uploading satellite image' },
-                  { label: 'Running SAM roof segmentation' },
-                  { label: 'Calculating panel placement' },
-                  { label: 'Generating results' },
-                ].map((s, i) => {
-                  const done = i < processingStep
-                  const active = i === processingStep
-                  return (
-                    <div key={i} className={`flex items-center transition-all duration-500 ${
-                      done ? 'text-gray-700' : active ? 'text-gray-700' : 'text-gray-400'
-                    }`}>
-                      {done ? (
-                        <span className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm mr-3 flex-shrink-0">✓</span>
-                      ) : active ? (
-                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        </div>
-                      ) : (
-                        <span className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-white text-sm mr-3 flex-shrink-0">{i + 1}</span>
-                      )}
-                      <span className={`font-medium ${active ? 'text-blue-700' : ''}`}>{s.label}</span>
-                      {active && (
-                        <span className="ml-2 text-xs text-blue-400 animate-pulse">processing…</span>
-                      )}
+                  { label: 'Uploading satellite image', done: true },
+                  { label: 'Running SAM roof segmentation', loading: true },
+                  { label: 'Calculating panel placement', pending: true },
+                  { label: 'Generating results', pending: true },
+                ].map((item, i) => (
+                  <div key={i} className={`flex items-center ${item.pending ? 'text-slate-400' : 'text-slate-700'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${item.done ? 'bg-eco-500 text-white' : item.loading ? 'bg-solar-500' : 'bg-slate-300 text-white'
+                      }`}>
+                      {item.done ? '✓' : item.loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : i + 1}
                     </div>
-                  )
-                })}
+                    <span className="font-medium">{item.label}</span>
+                  </div>
+                ))}
               </div>
-              <p className="text-center text-sm text-gray-500 mt-6">This may take 1–2 minutes depending on image size…</p>
+              <p className="text-center text-sm text-slate-400 mt-6">This may take 1-2 minutes...</p>
             </div>
           </div>
         )}
 
-        {/* Step 8: AI Detection Results - Visual Transparency */}
+        {/* Step 8: AI Results */}
         {currentStep === 8 && visualizationData && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">
+          <div className="card animate-slide-up">
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <div className="p-2 bg-eco-100 rounded-xl"><Cpu className="w-5 h-5 text-eco-600" /></div>
               🤖 AI Roof Detection Results
             </h2>
-            
+
             <div className="mb-6">
-              <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
-                <h3 className="font-semibold text-blue-900 mb-2">Visual Transparency</h3>
-                <p className="text-sm text-blue-800">
-                  Below you can see exactly what our AI detected on your roof. 
-                  The <span className="font-semibold text-green-600">green area</span> shows usable space for solar panels
-                  {visualizationData?.panel_positions?.length > 0 && (
-                    <span>, and the <span className="font-semibold text-orange-500">orange rectangles</span> show the optimal panel placement</span>
-                  )}
-                  {visualizationData?.obstacles?.length > 0 && (
-                    <span>. <span className="font-semibold text-red-600">Red markers</span> indicate obstacles</span>
-                  )}.
+              <div className="bg-helio-50 border border-helio-200 rounded-xl p-4 mb-4">
+                <h3 className="font-display font-bold text-helio-900 mb-2">Visual Transparency</h3>
+                <p className="text-sm text-helio-800">
+                  Below you can see what our AI detected. The <span className="font-semibold text-eco-600">green area</span> shows usable space for solar panels, and <span className="font-semibold text-red-600">red markers</span> indicate obstacles.
                 </p>
               </div>
-              
-              <PolygonOverlay 
+
+              <PolygonOverlay
                 visualization={visualizationData}
                 capturedImage={capturedRoofImage}
-                panelPositions={visualizationData?.panel_positions}
-                onSnapshotReady={setSitePlanSnapshot}
-                onApprove={async () => {
-                  // Save the canvas snapshot to the backend before navigating
-                  if (sitePlanSnapshot && estimationId) {
-                    try {
-                      await estimationsAPI.update(estimationId, { site_plan_snapshot: sitePlanSnapshot })
-                    } catch (e) {
-                      // Non-blocking — if save fails, report still works with SVG fallback
-                      console.warn('site_plan_snapshot save failed:', e)
-                    }
-                  }
+                onApprove={() => {
                   if (estimationId) {
                     navigate(`/estimations/${estimationId}`)
                   }
                 }}
                 onReject={() => {
-                  // Allow user to go back and retry
                   setCurrentStep(1)
                   setVisualizationData(null)
                   setEstimationId(null)

@@ -4,19 +4,21 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="HelioSmart — Intelligent solar energy estimation platform for homes and businesses. AI-powered roof analysis, panel placement, and production forecasting." />
+    <meta name="theme-color" content="#0f172a" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <title>HelioSmart - Solar Estimation Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>HelioSmart — Solar Estimation Platform</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/waterfall.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- Global stub so Google Maps callback doesn't throw -->
-    <script>window.initMap = function() {};</script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBWF4GwzK9NQfaHWgXzpyYzzOZUSsxt824&libraries=places&callback=initMap&loading=async"></script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBWF4GwzK9NQfaHWgXzpyYzzOZUSsxt824&libraries=places&callback=initMap"></script>
   </body>
 </html>

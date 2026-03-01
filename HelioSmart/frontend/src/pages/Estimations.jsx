@@ -2,16 +2,16 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { estimationsAPI } from '@/services/api'
-import { Plus, Eye, Trash2 } from 'lucide-react'
+import { Plus, Eye, Trash2, FileText, CheckCircle, Clock, AlertTriangle, Filter } from 'lucide-react'
 
 export default function Estimations() {
   const [statusFilter, setStatusFilter] = useState('')
-  
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['estimations', statusFilter],
     queryFn: () => estimationsAPI.getAll({ status: statusFilter || undefined }),
   })
-  
+
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this estimation?')) {
       try {
@@ -22,86 +22,140 @@ export default function Estimations() {
       }
     }
   }
-  
+
+  const estimations = data?.data?.estimations || []
+  const completed = estimations.filter(e => e.status === 'completed').length
+  const pending = estimations.filter(e => e.status === 'pending').length
+  const draft = estimations.filter(e => e.status === 'draft').length
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'completed': return 'badge-success'
+      case 'pending': return 'badge-warning'
+      case 'failed': return 'badge-danger'
+      default: return 'badge-neutral'
+    }
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-800">Solar Estimations</h1>
-        <Link to="/estimations/create" className="btn-primary flex items-center space-x-2">
-          <Plus className="w-5 h-5" />
-          <span>New Estimation</span>
+    <div className="page-container">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h1 className="page-title">Solar Estimations</h1>
+          <p className="page-subtitle">Manage and track your solar installation projects</p>
+        </div>
+        <Link to="/estimations/create" className="btn-primary">
+          <Plus className="w-4 h-4 mr-2" />
+          New Estimation
         </Link>
       </div>
-      
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {[
+          { label: 'Total', value: estimations.length, icon: FileText, color: 'text-helio-600', bg: 'bg-helio-100' },
+          { label: 'Completed', value: completed, icon: CheckCircle, color: 'text-eco-600', bg: 'bg-eco-100' },
+          { label: 'Pending', value: pending, icon: Clock, color: 'text-solar-600', bg: 'bg-solar-100' },
+          { label: 'Draft', value: draft, icon: AlertTriangle, color: 'text-slate-600', bg: 'bg-slate-100' },
+        ].map((stat, i) => {
+          const Icon = stat.icon
+          return (
+            <div key={i} className="stat-card">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-500 font-medium">{stat.label}</p>
+                  <p className="text-2xl font-display font-bold text-slate-900 mt-1">{stat.value}</p>
+                </div>
+                <div className={`p-2.5 ${stat.bg} rounded-xl`}>
+                  <Icon className={`w-5 h-5 ${stat.color}`} />
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
       {/* Filters */}
-      <div className="card">
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <label className="label">Status Filter</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="input-field"
-            >
-              <option value="">All</option>
-              <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
+      <div className="card mb-6">
+        <div className="flex items-center gap-4">
+          <Filter className="w-5 h-5 text-slate-400" />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="input-field max-w-xs"
+          >
+            <option value="">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="pending">Pending</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
         </div>
       </div>
-      
-      {/* Estimations List */}
-      <div className="card">
+
+      {/* Estimations Table */}
+      <div className="card p-0 overflow-hidden">
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading estimations...</div>
-        ) : data?.data?.estimations?.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">No estimations found</div>
+          <div className="text-center py-16">
+            <div className="spinner-lg mx-auto mb-4"></div>
+            <p className="text-slate-500">Loading estimations...</p>
+          </div>
+        ) : estimations.length === 0 ? (
+          <div className="text-center py-16">
+            <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-500 font-medium">No estimations found</p>
+            <p className="text-sm text-slate-400 mt-1">Create your first solar estimation to get started</p>
+            <Link to="/estimations/create" className="btn-primary mt-4 inline-flex">
+              <Plus className="w-4 h-4 mr-2" />
+              Create Estimation
+            </Link>
+          </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
+            <table className="premium-table">
+              <thead>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">System Size</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th>ID</th>
+                  <th>Customer</th>
+                  <th>Location</th>
+                  <th>System Size</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {data?.data?.estimations?.map((estimation) => (
-                  <tr key={estimation.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-900">{estimation.id}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{estimation.customer_name || 'N/A'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{estimation.city || 'N/A'}, {estimation.state || 'N/A'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{estimation.system_capacity} kW</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        estimation.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        estimation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        estimation.status === 'failed' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
+              <tbody>
+                {estimations.map((estimation) => (
+                  <tr key={estimation.id}>
+                    <td className="font-mono text-xs text-slate-500">#{estimation.id}</td>
+                    <td>
+                      <span className="font-semibold text-slate-900">{estimation.customer_name || 'N/A'}</span>
+                    </td>
+                    <td>{estimation.city || 'N/A'}, {estimation.state || 'N/A'}</td>
+                    <td>
+                      <span className="font-semibold">{estimation.system_capacity}</span>
+                      <span className="text-slate-400 ml-1">kW</span>
+                    </td>
+                    <td>
+                      <span className={getStatusBadge(estimation.status)}>
                         {estimation.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm">
-                      <div className="flex gap-2">
+                    <td>
+                      <div className="flex items-center gap-2">
                         <Link
                           to={`/estimations/${estimation.id}`}
-                          className="text-primary-600 hover:text-primary-800"
+                          className="p-2 rounded-lg text-helio-600 hover:bg-helio-50 transition-colors"
+                          title="View details"
                         >
-                          <Eye className="w-5 h-5" />
+                          <Eye className="w-4 h-4" />
                         </Link>
                         <button
                           onClick={() => handleDelete(estimation.id)}
-                          className="text-red-600 hover:text-red-800"
+                          className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                          title="Delete"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>

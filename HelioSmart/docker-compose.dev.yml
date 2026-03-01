@@ -38,20 +38,13 @@ services:
       APP_VERSION: 1.0.0
       DEBUG: "True"
       PY_SERVICE_URL: http://host.docker.internal:8889
-      OLLAMA_URL: http://heliosmart-ollama-dev:11434
-      OLLAMA_MODEL: llama3.2:3b
-      # HuggingFace cache — persists Whisper & sentence-transformers models across restarts
-      HF_HOME: /hf_cache
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
-      ollama:
-        condition: service_started
     volumes:
       - ./backend:/app
-      - hf_cache:/hf_cache
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # React Frontend (Development mode with Vite)
@@ -72,32 +65,9 @@ services:
       - /app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
 
-  # Ollama LLM Service
-  ollama:
-    image: ollama/ollama:latest
-    container_name: heliosmart-ollama-dev
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    environment:
-      - OLLAMA_ORIGINS=*
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q llama || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-
 volumes:
   postgres_data:
     driver: local
-  hf_cache:
-    driver: local
-  ollama_data:
-    external: true
-    name: mediassist_ollama_data
 
 networks:
   default:

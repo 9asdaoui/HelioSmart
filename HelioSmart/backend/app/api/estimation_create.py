@@ -49,7 +49,6 @@ async def create_project(
     customer_name: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     coverage_percentage: Optional[float] = Form(80),
-    roof_points: Optional[str] = Form(None),  # JSON array of {x, y} points from Step 5
     db: Session = Depends(get_db),
 ):
     """
@@ -162,21 +161,11 @@ async def create_project(
         # ========= 9. Call usable area detection API =========
         usable_area_result = None
         if roof_image_path:
-            # Parse roof_points JSON if provided
-            parsed_roof_points = None
-            if roof_points:
-                try:
-                    parsed_roof_points = json.loads(roof_points)
-                    logger.info(f"Received {len(parsed_roof_points)} roof points from user")
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse roof_points JSON")
-            
             usable_area_options = {
                 "meters_per_pixel": scale_meters_per_pixel,
                 "roof_type": roof_type,
                 "center_lat": latitude,
                 "center_lng": longitude,
-                "roof_points": parsed_roof_points,  # User-placed points from Step 5
             }
             usable_area_options = {k: v for k, v in usable_area_options.items() if v is not None}
 
@@ -381,15 +370,6 @@ async def create_project(
             losses = calc_service.calculate_total_system_loss(
                 dc_voltage_drop, eta_inverter, ac_voltage_drop
             )
-            
-            # Calculate detailed loss breakdown for waterfall chart
-            loss_breakdown = calc_service.calculate_system_loss_breakdown(
-                dc_voltage_drop, eta_inverter, ac_voltage_drop,
-                location_lat=latitude,
-                roof_tilt=float(roof_tilt) if roof_tilt else None
-            )
-        else:
-            loss_breakdown = None
 
         # ========= 7. Call PVWatts API for solar estimation =========
         pvwatts_data = await pvwatts_service.get_estimate(
@@ -444,12 +424,8 @@ async def create_project(
             "solrad_monthly": json.dumps(solrad_monthly) if solrad_monthly else None,
             "ac_monthly": json.dumps(ac_monthly) if ac_monthly else None,
             "energy_annual": annual_production or pvwatts_data.get("annualProduction", 0),
-            # PVWatts returns capacity_factor as a percentage (e.g. 18.5 for 18.5%)
-            # Store as a decimal ratio (0-1) so frontend can display correctly
-            "capacity_factor": (pvwatts_data.get("capacityFactor", 0) or 0) / 100.0,
+            "capacity_factor": pvwatts_data.get("capacityFactor"),
             "solrad_annual": pvwatts_data.get("solradAnnual"),
-            # Production per kW = Annual Production / System Capacity
-            "annual_production_per_kw": round((annual_production or pvwatts_data.get("annualProduction", 0)) / system_capacity, 1) if system_capacity and system_capacity > 0 else None,
             "status": "completed",
             "panel_id": panel_id,
             "panel_count": panel_count,
@@ -459,8 +435,6 @@ async def create_project(
             "inverter_design": json.dumps(inverter_design) if inverter_design else None,
             "inverter_combos": json.dumps(inverter_combos) if inverter_combos else None,
             "stringing_details": json.dumps(stringing_details) if stringing_details else None,
-            "loss_breakdown": json.dumps(loss_breakdown) if loss_breakdown else None,
-            "total_losses_percent": loss_breakdown.get("total_loss_percentage") if loss_breakdown else losses,
         }
 
         # Calculate estimated roof area from panel count (used when SAM is unavailable)
@@ -532,11 +506,6 @@ async def create_project(
             "sam_warning": usable_area_result.get("_warning") if usable_area_result else "SAM service unavailable - using estimated roof area",
             "roof_mask_image": usable_area_result.get("roof_mask_image") if usable_area_result else None,
             "overlay_image": usable_area_result.get("overlay_image") if usable_area_result else None,
-            # Panel placement data
-            "panel_positions": panel_placement_result.get("panel_positions") if panel_placement_result else None,
-            "panels_placed": panel_placement_result.get("panel_count") if panel_placement_result else None,
-            "coverage_percentage": panel_placement_result.get("coverage_percentage") if panel_placement_result else None,
-            "row_count": panel_placement_result.get("panel_grid", {}).get("rows") if panel_placement_result else None,
         }
         
         logger.info(f"Visualization data prepared: sam_mode={sam_mode}, center=({latitude}, {longitude})")
@@ -590,20 +559,6 @@ async def get_visualization(estimation_id: int, db: Session = Depends(get_db)):
             else:
                 sam_mode = "fallback"
         
-        # Parse panel positions if available
-        panel_positions = None
-        panel_grid = None
-        if estimation.panel_positions:
-            try:
-                panel_positions = json.loads(estimation.panel_positions) if isinstance(estimation.panel_positions, str) else estimation.panel_positions
-            except (json.JSONDecodeError, TypeError):
-                pass
-        if estimation.panel_grid:
-            try:
-                panel_grid = json.loads(estimation.panel_grid) if isinstance(estimation.panel_grid, str) else estimation.panel_grid
-            except (json.JSONDecodeError, TypeError):
-                pass
-        
         visualization_data = {
             "roof_polygon": roof_polygon,
             "usable_polygon": usable_polygon,
@@ -617,10 +572,6 @@ async def get_visualization(estimation_id: int, db: Session = Depends(get_db)):
             "roof_mask_image": estimation.roof_mask_image,
             "overlay_image": estimation.overlay_image,
             "sam_masks": sam_masks,
-            # Panel placement data
-            "panel_positions": panel_positions,
-            "panels_placed": estimation.panel_count,
-            "panel_grid": panel_grid,
         }
         
         return JSONResponse(content={

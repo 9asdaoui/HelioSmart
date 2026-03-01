@@ -1,9 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.api import api_router
-import os
 
 # Create FastAPI app
 app = FastAPI(
@@ -25,17 +23,6 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(api_router)
-
-# Serve static storage files (roof images) so the browser can load them by URL
-os.makedirs("storage", exist_ok=True)
-app.mount("/storage", StaticFiles(directory="storage"), name="storage")
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Kick off chatbot model initialization in the background on startup."""
-    from app.api.chatbot import start_background_init
-    start_background_init()
 
 
 @app.get("/")

@@ -1,0 +1,12 @@
+Name,Brand,Model,Category,Power,Warranty,Price,Currency,Description
+"Solar Panel 400W","Jinko Solar","JKM400M-72H","solar_panel","400W","25 years","1250","MAD","High-efficiency monocrystalline solar panel with 21.2% efficiency rating"
+"Solar Panel 450W","Longi Solar","LR4-72HPH-450M","solar_panel","450W","25 years","1450","MAD","Half-cell mono PERC technology for better performance in low light"
+"Solar Panel 550W","JA Solar","JAM72S30-550/MR","solar_panel","550W","25 years","1650","MAD","Bifacial double-glass module with high power output"
+"String Inverter 5kW","SMA","Sunny Boy 5.0","inverter","5kW","10 years","8500","MAD","Single-phase string inverter with integrated SMA Smart Connected"
+"String Inverter 10kW","Fronius","Symo 10.0-3-M","inverter","10kW","10 years","12500","MAD","Three-phase inverter for commercial applications"
+"Hybrid Inverter 8kW","Victron","MultiPlus-II 48/8000","inverter","8kW","5 years","18500","MAD","Multi-functional inverter/charger with ESS capability"
+"Battery 10kWh","BYD","B-Box Premium HVM 10.2","battery","10kWh","10 years","25000","MAD","High voltage modular battery storage system"
+"Battery 5kWh","Pylontech","US5000","battery","5kWh","10 years","14500","MAD","48V lithium iron phosphate battery for residential storage"
+"Mounting System Rail","K2 Systems","CrossRail 40-X","mounting_system","N/A","12 years","45","MAD","Aluminum mounting rail for pitched roofs"
+"Cable 4mm²","Solar Cable","H1Z2Z2-K 1x4mm²","cable","N/A","N/A","12","MAD","Solar cable with double insulation for DC connections"
+"MC4 Connector","Staubli","MC4-Evo2","connector","N/A","N/A","25","MAD","Waterproof PV connector for solar installations"
