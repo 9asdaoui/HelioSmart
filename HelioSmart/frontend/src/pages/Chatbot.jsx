@@ -5,13 +5,22 @@ import {
   Settings, Trash2, Sparkles, Cpu, Database, AudioWaveform,
   Languages, Copy, Check, Download, Sun, Zap, DollarSign,
   Leaf, Lightbulb, Wrench, MessageCircle, ArrowRight, X,
-  ChevronRight, PanelLeftClose, PanelLeftOpen,
+  ChevronRight, PanelLeftClose, PanelLeftOpen, Play, Pause,
+  Paperclip, FileText,
 } from 'lucide-react'
+
+/* Detect RTL content (Arabic / Hebrew / Persian) */
+function detectRTL(text) {
+  if (!text) return false
+  const rtlChars = (text.match(/[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/g) || []).length
+  const total = text.replace(/\s/g, '').length
+  return total > 0 && rtlChars / total > 0.12
+}
 
 /* 
    Safe Markdown renderer  pure React elements, zero dangerouslySetInnerHTML
  */
-function MarkdownContent({ content }) {
+function MarkdownContent({ content, rtl = false }) {
   if (!content) return null
 
   const parseInline = (text, keyBase) => {
@@ -95,15 +104,53 @@ function MarkdownContent({ content }) {
 /* 
    Message bubble
  */
-function ChatMessage({ message }) {
+function ChatMessage({ message, language = 'en' }) {
   const [copied, setCopied] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const [audioLoading, setAudioLoading] = useState(false)
+  const audioRef = useRef(null)
   const isUser = message.role === 'user'
   const isError = message.isError
+  const rtl = detectRTL(message.content)
 
   const copy = () => {
     navigator.clipboard.writeText(message.content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const togglePlay = async () => {
+    // If already have audio loaded — toggle pause/resume
+    if (audioRef.current) {
+      if (playing) {
+        audioRef.current.pause()
+        setPlaying(false)
+      } else {
+        audioRef.current.play()
+        setPlaying(true)
+      }
+      return
+    }
+    // Fetch TTS audio
+    try {
+      setAudioLoading(true)
+      const resp = await chatbotAPI.textToSpeech(message.content, language)
+      const blob = new Blob([resp.data], { type: 'audio/mpeg' })
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audio.onended = () => {
+        setPlaying(false)
+        audioRef.current = null
+        URL.revokeObjectURL(url)
+      }
+      audio.play()
+      setPlaying(true)
+    } catch (e) {
+      console.error('TTS failed', e)
+    } finally {
+      setAudioLoading(false)
+    }
   }
 
   const formatTime = (ts) => {
@@ -142,8 +189,8 @@ function ChatMessage({ message }) {
           )}
 
           {isUser
-            ? <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-            : <MarkdownContent content={message.content} />}
+            ? <p dir={rtl ? 'rtl' : 'ltr'} className={`whitespace-pre-wrap leading-relaxed ${rtl ? 'text-right' : ''}`}>{message.content}</p>
+            : <MarkdownContent content={message.content} rtl={rtl} />}
 
           {/* Context badge */}
           {message.contextUsed && (
@@ -153,17 +200,36 @@ function ChatMessage({ message }) {
             </div>
           )}
 
-          {/* Copy btn  visible on hover */}
+          {/* Action buttons (copy + play) — visible on hover */}
           {!isUser && !isError && (
-            <button
-              onClick={copy}
-              className="absolute -top-2 -right-2 w-7 h-7 rounded-lg bg-[#243a56] border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-[#2d4968] shadow-lg"
-              title="Copy"
-            >
-              {copied
-                ? <Check className="w-3.5 h-3.5 text-green-400" />
-                : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-            </button>
+            <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+              {/* Play / Pause */}
+              <button
+                onClick={togglePlay}
+                className={`w-7 h-7 rounded-lg border border-white/10 flex items-center justify-center transition-all shadow-lg ${
+                  playing
+                    ? 'bg-amber-500/20 border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-[#243a56] hover:bg-[#2d4968]'
+                }`}
+                title={playing ? 'Pause' : 'Play'}
+              >
+                {audioLoading
+                  ? <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                  : playing
+                    ? <Pause className="w-3.5 h-3.5 text-amber-400" />
+                    : <Play className="w-3.5 h-3.5 text-slate-400" />}
+              </button>
+              {/* Copy */}
+              <button
+                onClick={copy}
+                className="w-7 h-7 rounded-lg bg-[#243a56] border border-white/10 flex items-center justify-center transition-all hover:bg-[#2d4968] shadow-lg"
+                title="Copy"
+              >
+                {copied
+                  ? <Check className="w-3.5 h-3.5 text-green-400" />
+                  : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+              </button>
+            </div>
           )}
         </div>
 
@@ -280,11 +346,21 @@ export default function Chatbot() {
   const [chatHistory, setChatHistory] = useState([])
   const [ready, setReady] = useState(false)
 
+  // Per-session isolated document context (private to this browser tab)
+  const [sessionId] = useState(() => {
+    let id = sessionStorage.getItem('hs_session_id')
+    if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('hs_session_id', id) }
+    return id
+  })
+  const [sessionDocs, setSessionDocs] = useState([])
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+
   const bottomRef = useRef(null)
   const textareaRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const timerRef = useRef(null)
+  const docInputRef = useRef(null)
 
   useEffect(() => {
     // Lock body scroll — only while on this page
@@ -364,7 +440,7 @@ export default function Chatbot() {
 
     try {
       const history = messages.slice(1).map(m => ({ role: m.role, content: m.content }))
-      const r = await chatbotAPI.chat(text, language, 500, useRag, history)
+      const r = await chatbotAPI.chat(text, language, 500, useRag, history, sessionId)
       const { response: reply, context_used } = r.data
       const done = [...next, { role: 'assistant', content: reply, contextUsed: context_used, timestamp: new Date().toISOString() }]
       setMessages(done)
@@ -423,19 +499,33 @@ export default function Chatbot() {
   }
 
   const handleAudio = async (blob) => {
+    // Show a placeholder user bubble immediately so the chat doesn't appear frozen
+    const placeholderId = Date.now()
+    setMessages(p => [...p, {
+      role: 'user',
+      content: '🎤 Transcribing…',
+      isVoice: true,
+      isPlaceholder: true,
+      id: placeholderId,
+      timestamp: new Date().toISOString(),
+    }])
     setIsLoading(true)
     try {
       const file = new File([blob], 'rec.wav', { type: 'audio/wav' })
-      const r = await chatbotAPI.uploadAudio(file)
+      const r = await chatbotAPI.uploadAudio(file, language, sessionId)
       const { transcription, response: reply } = r.data
+      // Replace placeholder with real transcription, then add assistant reply
       setMessages(p => [
-        ...p,
+        ...p.filter(m => m.id !== placeholderId),
         { role: 'user', content: transcription, isVoice: true, timestamp: new Date().toISOString() },
         { role: 'assistant', content: reply, timestamp: new Date().toISOString() },
       ])
       if (audioEnabled && serviceStatus?.tts_available) playTTS(reply)
     } catch {
-      setMessages(p => [...p, { role: 'assistant', content: 'Could not process audio. Please try again.', isError: true, timestamp: new Date().toISOString() }])
+      setMessages(p => [
+        ...p.filter(m => m.id !== placeholderId),
+        { role: 'assistant', content: 'Could not process audio. Please try again.', isError: true, timestamp: new Date().toISOString() },
+      ])
     } finally {
       setIsLoading(false)
     }
@@ -444,6 +534,31 @@ export default function Chatbot() {
   const clearChat = () => {
     saveHistory(messages)
     setMessages([{ role: 'assistant', content: WELCOME, timestamp: new Date().toISOString() }])
+  }
+
+  const handleDocUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setUploadingDoc(true)
+    try {
+      await chatbotAPI.uploadSessionDocument(sessionId, file)
+      setSessionDocs(prev => [...prev, file.name])
+      setMessages(p => [...p, {
+        role: 'assistant',
+        content: `Document **${file.name}** loaded into your private session. You can now ask questions about it — it is only visible to you and cleared when you close this tab.`,
+        timestamp: new Date().toISOString(),
+      }])
+    } catch {
+      setMessages(p => [...p, {
+        role: 'assistant',
+        content: 'Failed to upload document. Only .txt and .pdf files are supported.',
+        isError: true,
+        timestamp: new Date().toISOString(),
+      }])
+    } finally {
+      setUploadingDoc(false)
+    }
   }
 
   const exportChat = () => {
@@ -629,7 +744,7 @@ export default function Chatbot() {
         {/* Messages */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-6 space-y-5 chat-scrollbar" style={{ background: '#0b1827' }}>
           {messages.map((m, i) => (
-            <ChatMessage key={i} message={m} />
+            <ChatMessage key={i} message={m} language={language} />
           ))}
           {isLoading && <TypingIndicator />}
           <div ref={bottomRef} />
@@ -646,6 +761,17 @@ export default function Chatbot() {
 
         {/* Input bar */}
         <div className="flex-shrink-0 px-4 py-4 border-t border-white/5" style={{ background: '#0d1e31' }}>
+          {/* Uploaded session doc tags */}
+          {sessionDocs.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {sessionDocs.map((name, i) => (
+                <span key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                  <FileText className="w-3 h-3" />
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
           {isRecording ? (
             <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/5">
               <div className="flex items-center gap-3">
@@ -663,6 +789,7 @@ export default function Chatbot() {
             </div>
           ) : (
             <div className="flex items-end gap-3">
+              {/* Mic */}
               <button
                 onClick={startRecording}
                 disabled={isLoading || !serviceStatus?.stt_available}
@@ -674,6 +801,29 @@ export default function Chatbot() {
                 title={serviceStatus?.stt_available ? 'Voice input' : 'Voice unavailable'}
               >
                 <Mic className="w-4 h-4" />
+              </button>
+
+              {/* Paperclip — upload personal report */}
+              <input
+                ref={docInputRef}
+                type="file"
+                accept=".txt,.pdf"
+                className="hidden"
+                onChange={handleDocUpload}
+              />
+              <button
+                onClick={() => docInputRef.current?.click()}
+                disabled={uploadingDoc || !serviceStatus?.rag_available}
+                className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                  serviceStatus?.rag_available
+                    ? 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-amber-300'
+                    : 'bg-white/5 text-slate-700 cursor-not-allowed'
+                }`}
+                title={serviceStatus?.rag_available ? 'Upload your report (.txt / .pdf)' : 'RAG unavailable'}
+              >
+                {uploadingDoc
+                  ? <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                  : <Paperclip className="w-4 h-4" />}
               </button>
 
               <div className="flex-1 relative">

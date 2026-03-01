@@ -82,31 +82,43 @@ export const configurationsAPI = {
 // Chatbot
 export const chatbotAPI = {
   getStatus: () => api.get('/chatbot/status'),
-  chat: (query, language = 'en', maxTokens = 400, useRag = true, history = []) =>
+  chat: (query, language = 'en', maxTokens = 400, useRag = true, history = [], sessionId = null) =>
     api.post('/chatbot/chat', {
       query,
       language,
       max_tokens: maxTokens,
       use_rag: useRag,
       history,
+      session_id: sessionId,
     }),
-  chatWithTTS: (query, language = 'en', maxTokens = 400, useRag = true, history = []) =>
+  chatWithTTS: (query, language = 'en', maxTokens = 400, useRag = true, history = [], sessionId = null) =>
     api.post('/chatbot/chat-with-tts', {
       query,
       language,
       max_tokens: maxTokens,
       use_rag: useRag,
       history,
+      session_id: sessionId,
     }),
   textToSpeech: (text, language = 'en') =>
     api.post('/chatbot/tts', { text, language }, { responseType: 'arraybuffer' }),
-  uploadAudio: (audioFile) => {
+  uploadAudio: (audioFile, language = 'en', sessionId = null) => {
     const formData = new FormData()
     formData.append('audio', audioFile)
+    formData.append('language', language)
+    if (sessionId) formData.append('session_id', sessionId)
     return api.post('/chatbot/upload-audio', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+  uploadSessionDocument: (sessionId, file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('session_id', sessionId)
+    return api.post('/chatbot/upload-session-document', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  getSessionInfo: (sessionId) => api.get(`/chatbot/session/${sessionId}`),
+  clearSession: (sessionId) => api.delete(`/chatbot/session/${sessionId}`),
 }

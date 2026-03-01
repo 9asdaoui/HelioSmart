@@ -4,9 +4,10 @@ Solar energy estimation and consulting AI assistant
 """
 
 import os
+import time
 import logging
 import httpx
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
 import re
 
@@ -85,6 +86,11 @@ class ChatbotService:
         self.audio_path = "audio"
         self.vector_db_path = "faiss_index"
         self.documents_dir = "documents"
+
+        # Per-session isolated vector stores: {session_id: {store, last_used, files}}
+        # These are purely in-memory — zero leakage between users/sessions
+        self._session_stores: Dict[str, Dict] = {}
+        self.SESSION_TTL = 7200  # 2 hours inactivity
         
         # Ensure directories exist
         for path in [self.audio_path, self.documents_dir]:
@@ -228,7 +234,7 @@ class ChatbotService:
             lang_meta = {
                 "en": ("User", "Assistant", ""),
                 "fr": ("Utilisateur", "Assistant", "RAPPEL: réponds uniquement en français.\n"),
-                "ar": ("المستخدم", "المساعد", "تذكير صارم: أجب بالعربية الفصحى فقط. ممنوع استخدام أي كلمة إنجليزية أو فرنسية.\n"),
+                "ar": ("المستخدم", "المساعد", "تذكير حاسم: اكتب ردك بالعربية الفصحى فقط. يُحظر كتابة أي حرف لاتيني. اسم التطبيق بالعربية هو هيليوسمارت.\n"),
             }
             user_label, assistant_label, lang_reminder = lang_meta.get(language, lang_meta["en"])
 
@@ -293,10 +299,14 @@ RÈGLE ABSOLUE: Tu dois répondre UNIQUEMENT en français. N'utilise jamais l'an
 Tu aides avec : conception de systèmes solaires, estimations d'énergie, sélection d'onduleurs, analyse ROI, impact environnemental, et irradiance solaire par localisation.
 Sois concis — 3-4 phrases maximum sauf si plus de détails sont demandés.""",
 
-            "ar": """أنت مساعد HelioSmart، ذكاء اصطناعي لمنصة طاقة شمسية في المغرب.
-قاعدة صارمة: يجب أن تُجيب بالعربية الفصحى حصراً في كل ردودك. يُحظر تماماً استخدام أي كلمة إنجليزية أو فرنسية أو أجنبية مهما كانت. حتى المصطلحات التقنية يجب ترجمتها إلى العربية.
+            "ar": """أنت مساعد هيليوسمارت، ذكاء اصطناعي لمنصة طاقة شمسية في المغرب.
+قواعد صارمة لا استثناء فيها:
+1. اكتب كل كلمة بالحروف العربية حصراً. يُحظر كتابة أي حرف لاتيني أو أجنبي.
+2. اسم المنصة يُكتب دائماً: هيليوسمارت (وليس HelioSmart).
+3. المصطلحات التقنية تُترجم: العاكس، الألواح الشمسية، الطاقة، الاستثمار.
+4. إذا لم تعرف الترجمة، اكتب وصفاً عربياً بدلاً من الكلمة الأجنبية.
 
-تساعد المستخدمين في: تصميم أنظمة الألواح الشمسية، تقدير إنتاج الطاقة، اختيار العاكسات، تحليل العائد على الاستثمار وفترة الاسترداد، الأثر البيئي، وتحليل أشعة الشمس حسب الموقع.
+تساعد المستخدمين في: تصميم أنظمة الألواح الشمسية، تقدير إنتاج الطاقة، اختيار العاكسات، تحليل العائد على الاستثمار، الأثر البيئي، وتحليل أشعة الشمس حسب الموقع في المغرب.
 كن موجزاً — 3 إلى 4 جمل كحد أقصى ما لم يُطلب مزيد من التفاصيل.""",
         }
         return prompts.get(language, prompts["en"])
@@ -438,10 +448,48 @@ Sois concis — 3-4 phrases maximum sauf si plus de détails sont demandés.""",
         text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
         # Remove extra spaces
         text = re.sub(r'\s+', ' ', text).strip()
+
+        # For Arabic responses: replace known Latin brand/tech terms with Arabic equivalents
+        if language == 'ar':
+            ARABIC_REPLACEMENTS = [
+                # Brand name
+                (r'\bHelioSmart\b', 'هيليوسمارت'),
+                (r'\bheliosmart\b', 'هيليوسمارت'),
+                (r'\bHELIOSMART\b', 'هيليوسمارت'),
+                # Common solar/tech terms the model might slip through
+                (r'\bPVWatts\b', 'محاكي الطاقة الشمسية'),
+                (r'\bNASA\b', 'ناسا'),
+                (r'\bROI\b', 'العائد على الاستثمار'),
+                (r'\bAPI\b', 'واجهة البرمجة'),
+                (r'\bkWh\b', 'ك.و.س'),
+                (r'\bkW\b', 'كيلوواط'),
+                (r'\bMW\b', 'ميغاواط'),
+                (r'\bWh\b', 'و.س'),
+                (r'\bAI\b', 'الذكاء الاصطناعي'),
+            ]
+            for pattern, replacement in ARABIC_REPLACEMENTS:
+                text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+            # Strip any token that contains zero Arabic characters but contains alphabetic
+            # characters from any script (ASCII Latin, extended Latin, Vietnamese, etc.)
+            # Strategy: split on whitespace, drop tokens that have letters but no Arabic chars
+            ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
+            ALPHA_RE = re.compile(r'[^\W\d_]', re.UNICODE)  # any Unicode letter
+            tokens = text.split(' ')
+            clean_tokens = []
+            for tok in tokens:
+                # Keep token if it has Arabic chars, or has no alphabetic content at all (numbers, punct)
+                if ARABIC_RE.search(tok) or not ALPHA_RE.search(tok):
+                    clean_tokens.append(tok)
+                # else: drop it (foreign word)
+            text = ' '.join(clean_tokens)
+            # Clean up double spaces left by removal
+            text = re.sub(r'\s+', ' ', text).strip()
+
         return text
     
     def get_rag_context(self, query: str) -> str:
-        """Retrieve context from vector store"""
+        """Retrieve context from global vector store"""
         if not self.vector_store or not query:
             return ""
         
@@ -452,31 +500,105 @@ Sois concis — 3-4 phrases maximum sauf si plus de détails sont demandés.""",
         except Exception as e:
             logger.error(f"RAG retrieval error: {e}")
             return ""
+
+    # ------------------------------------------------------------------ #
+    #  Per-session document store  (private, in-memory, TTL-evicted)      #
+    # ------------------------------------------------------------------ #
+
+    def _evict_expired_sessions(self):
+        """Remove sessions idle longer than SESSION_TTL seconds."""
+        now = time.time()
+        expired = [sid for sid, d in self._session_stores.items()
+                   if now - d['last_used'] > self.SESSION_TTL]
+        for sid in expired:
+            del self._session_stores[sid]
+            logger.info(f"Evicted expired session store: {sid[:8]}…")
+
+    def _extract_text(self, file_path: str) -> str:
+        """Extract plain text from .txt or .pdf file."""
+        if file_path.endswith(".txt"):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception as e:
+                logger.error(f"Error reading txt: {e}")
+                return ""
+        elif file_path.endswith(".pdf"):
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(file_path)
+                return "\n".join(p.extract_text() or "" for p in reader.pages)
+            except ImportError:
+                logger.warning("pypdf not installed — PDF not supported")
+                return ""
+            except Exception as e:
+                logger.error(f"Error reading pdf: {e}")
+                return ""
+        return ""
+
+    def add_session_document(self, session_id: str, file_path: str, filename: str) -> Dict[str, Any]:
+        """Add a document to a user's private session vector store."""
+        if not RAG_AVAILABLE or not self.embeddings or not self.text_splitter:
+            return {"error": "RAG not available"}
+
+        self._evict_expired_sessions()
+
+        content = self._extract_text(file_path)
+        if not content.strip():
+            return {"error": "No text could be extracted from the document"}
+
+        chunks = self.text_splitter.split_text(content)
+
+        if session_id in self._session_stores:
+            self._session_stores[session_id]['store'].add_texts(chunks)
+            self._session_stores[session_id]['files'].append(filename)
+            self._session_stores[session_id]['last_used'] = time.time()
+        else:
+            store = FAISS.from_texts(chunks, self.embeddings)
+            self._session_stores[session_id] = {
+                'store': store,
+                'last_used': time.time(),
+                'files': [filename],
+            }
+
+        logger.info(f"Session {session_id[:8]}…: added '{filename}' ({len(chunks)} chunks)")
+        return {"status": "success", "chunks_added": len(chunks), "file": filename}
+
+    def get_session_rag_context(self, session_id: str, query: str) -> str:
+        """Retrieve context from a user's private session store."""
+        if not session_id or session_id not in self._session_stores:
+            return ""
+        data = self._session_stores[session_id]
+        data['last_used'] = time.time()
+        try:
+            docs = data['store'].similarity_search(query, k=4)
+            return "\n\n".join([d.page_content for d in docs])
+        except Exception as e:
+            logger.error(f"Session RAG error: {e}")
+            return ""
+
+    def get_session_info(self, session_id: str) -> Dict[str, Any]:
+        """Return metadata about a session store."""
+        if session_id not in self._session_stores:
+            return {"active": False, "files": []}
+        return {"active": True, "files": self._session_stores[session_id]['files']}
+
+    def clear_session(self, session_id: str):
+        """Delete a session store immediately."""
+        if session_id in self._session_stores:
+            del self._session_stores[session_id]
+            logger.info(f"Cleared session store: {session_id[:8]}…")
     
     def add_document_to_rag(self, file_path: str) -> Dict[str, Any]:
-        """Add document to vector store"""
+        """Add document to global vector store"""
         if not self.vector_store or not self.text_splitter:
             return {"error": "RAG not available"}
         
         try:
-            # Extract text from file
-            content = ""
-            if file_path.endswith(".txt"):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            elif file_path.endswith(".pdf"):
-                try:
-                    from pypdf import PdfReader
-                    reader = PdfReader(file_path)
-                    for page in reader.pages:
-                        content += page.extract_text() + "\n"
-                except ImportError:
-                    return {"error": "PDF support not available"}
-            
+            content = self._extract_text(file_path)
             if not content:
                 return {"error": "No text extracted"}
             
-            # Split and add to store
             chunks = self.text_splitter.split_text(content)
             self.vector_store.add_texts(chunks)
             self.vector_store.save_local(self.vector_db_path)
@@ -490,10 +612,10 @@ Sois concis — 3-4 phrases maximum sauf si plus de détails sont demandés.""",
             logger.error(f"Document processing error: {e}")
             return {"error": str(e)}
     
-    def transcribe_audio(self, audio_file_path: str) -> Tuple[str, str]:
+    def transcribe_audio(self, audio_file_path: str, language: str = "en") -> Tuple[str, str]:
         """Transcribe audio using Whisper"""
         if not self.whisper_model or not self.whisper_processor or not SPEECH_AVAILABLE:
-            return "STT not available", "en"
+            return "STT not available", language
         
         try:
             # Convert to 16kHz WAV with proper handling
@@ -528,14 +650,16 @@ Sois concis — 3-4 phrases maximum sauf si plus de détails sont demandés.""",
                 return_tensors="pt"
             ).input_features.to(whisper_device)
             
-            # Generate transcription with language detection
+            # Map app language codes to Whisper language codes
+            whisper_lang_map = {"en": "en", "fr": "fr", "ar": "ar"}
+            whisper_lang = whisper_lang_map.get(language, None)  # None = auto-detect
+
+            # Generate transcription in the specified language
             with torch.no_grad():
-                predicted_ids = self.whisper_model.generate(
-                    input_features,
-                    max_new_tokens=440,
-                    language="en",
-                    task="transcribe"
-                )
+                generate_kwargs = {"max_new_tokens": 440, "task": "transcribe"}
+                if whisper_lang:
+                    generate_kwargs["language"] = whisper_lang
+                predicted_ids = self.whisper_model.generate(input_features, **generate_kwargs)
             
             # Decode
             transcription = self.whisper_processor.batch_decode(
@@ -551,13 +675,13 @@ Sois concis — 3-4 phrases maximum sauf si plus de détails sont demandés.""",
             
             # Return transcription or default if empty
             if transcription and transcription.strip():
-                return transcription.strip(), "en"
+                return transcription.strip(), language
             else:
-                return "Could not understand audio. Please speak clearly.", "en"
-                
+                return "Could not understand audio. Please speak clearly.", language
+
         except Exception as e:
             logger.error(f"Transcription error: {e}")
-            return f"Error transcribing audio: {str(e)}", "en"
+            return f"Error transcribing audio: {str(e)}", language
     
     def generate_speech(self, text: str, language: str = "en") -> Optional[str]:
         """Generate speech from text using gTTS"""

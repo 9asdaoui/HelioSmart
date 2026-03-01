@@ -2,7 +2,7 @@
 Chatbot endpoints with Ollama LLM integration for HelioSmart
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional, List
 import os
@@ -79,6 +79,7 @@ class ChatRequest(BaseModel):
     max_tokens: int = 400
     use_rag: bool = True
     history: Optional[List[HistoryMessage]] = []
+    session_id: Optional[str] = None  # per-user private doc context
 
 
 class ChatResponse(BaseModel):
@@ -166,12 +167,19 @@ async def chat(request: ChatRequest):
     try:
         service = get_chatbot_service()
         
-        # Get RAG context if enabled
-        context = ""
-        context_used = False
+        # 1. Personal session context (user's own uploaded docs) — highest priority
+        session_context = ""
+        if request.session_id:
+            session_context = service.get_session_rag_context(request.session_id, request.query)
+
+        # 2. Global knowledge base context
+        global_context = ""
         if request.use_rag:
-            context = service.get_rag_context(request.query)
-            context_used = bool(context)
+            global_context = service.get_rag_context(request.query)
+
+        # Combine: session context takes precedence, shown first
+        context = "\n\n".join(filter(None, [session_context, global_context]))
+        context_used = bool(context)
         
         # Build history list for LLM
         history = [(m.role, m.content) for m in (request.history or [])]
@@ -231,7 +239,11 @@ async def chat_with_tts(request: ChatRequest):
 
 
 @router.post("/upload-audio", response_model=AudioResponse)
-async def upload_audio(audio: UploadFile = File(...)):
+async def upload_audio(
+    audio: UploadFile = File(...),
+    language: str = Form("en"),
+    session_id: Optional[str] = Form(None),
+):
     """Upload audio, transcribe, and generate response"""
     try:
         service = get_chatbot_service()
@@ -243,11 +255,13 @@ async def upload_audio(audio: UploadFile = File(...)):
             tmp_path = tmp.name
         
         try:
-            # Transcribe
-            transcription, language = service.transcribe_audio(tmp_path)
+            # Transcribe using the user's selected language
+            transcription, language = service.transcribe_audio(tmp_path, language)
             
-            # Get RAG context
-            context = service.get_rag_context(transcription)
+            # Session context (private docs) + global RAG
+            session_context = service.get_session_rag_context(session_id, transcription) if session_id else ""
+            global_context = service.get_rag_context(transcription)
+            context = "\n\n".join(filter(None, [session_context, global_context]))
             
             # Generate response
             response = await service.generate_response(
@@ -277,7 +291,7 @@ async def upload_audio(audio: UploadFile = File(...)):
 
 @router.post("/add-document")
 async def add_document(file: UploadFile = File(...)):
-    """Add document to RAG knowledge base"""
+    """Add document to global RAG knowledge base (admin use)"""
     try:
         service = get_chatbot_service()
         
@@ -298,6 +312,57 @@ async def add_document(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Document upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload-session-document")
+async def upload_session_document(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+):
+    """
+    Upload a document into a user's private in-memory session store.
+    The document is only visible to requests carrying the same session_id.
+    It is never persisted to disk alongside other users' data and is
+    automatically evicted after 2 hours of inactivity.
+    """
+    try:
+        service = get_chatbot_service()
+
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        if ext not in (".txt", ".pdf"):
+            raise HTTPException(status_code=400, detail="Only .txt and .pdf files are supported")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            result = service.add_session_document(session_id, tmp_path, file.filename)
+            return result
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Session document upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/session/{session_id}")
+async def get_session_info(session_id: str):
+    """Return which files are loaded in a session store."""
+    service = get_chatbot_service()
+    return service.get_session_info(session_id)
+
+
+@router.delete("/session/{session_id}")
+async def clear_session(session_id: str):
+    """Clear all documents from a session store immediately."""
+    service = get_chatbot_service()
+    service.clear_session(session_id)
+    return {"status": "cleared", "session_id": session_id}
 
 
 @router.get("/audio/{filename}")
