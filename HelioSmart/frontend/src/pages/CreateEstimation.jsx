@@ -63,6 +63,7 @@ export default function CreateEstimation() {
   const [customerEmail, setCustomerEmail] = useState('')
   const [visualizationData, setVisualizationData] = useState(null)
   const [estimationId, setEstimationId] = useState(null)
+  const [sitePlanSnapshot, setSitePlanSnapshot] = useState(null)
   const [errors, setErrors] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
   const [capturedRoofImage, setCapturedRoofImage] = useState(null)
@@ -886,7 +887,17 @@ export default function CreateEstimation() {
                 visualization={visualizationData}
                 capturedImage={capturedRoofImage}
                 panelPositions={visualizationData?.panel_positions}
-                onApprove={() => {
+                onSnapshotReady={setSitePlanSnapshot}
+                onApprove={async () => {
+                  // Save the canvas snapshot to the backend before navigating
+                  if (sitePlanSnapshot && estimationId) {
+                    try {
+                      await estimationsAPI.update(estimationId, { site_plan_snapshot: sitePlanSnapshot })
+                    } catch (e) {
+                      // Non-blocking — if save fails, report still works with SVG fallback
+                      console.warn('site_plan_snapshot save failed:', e)
+                    }
+                  }
                   if (estimationId) {
                     navigate(`/estimations/${estimationId}`)
                   }

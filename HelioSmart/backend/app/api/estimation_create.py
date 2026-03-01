@@ -444,8 +444,12 @@ async def create_project(
             "solrad_monthly": json.dumps(solrad_monthly) if solrad_monthly else None,
             "ac_monthly": json.dumps(ac_monthly) if ac_monthly else None,
             "energy_annual": annual_production or pvwatts_data.get("annualProduction", 0),
-            "capacity_factor": pvwatts_data.get("capacityFactor"),
+            # PVWatts returns capacity_factor as a percentage (e.g. 18.5 for 18.5%)
+            # Store as a decimal ratio (0-1) so frontend can display correctly
+            "capacity_factor": (pvwatts_data.get("capacityFactor", 0) or 0) / 100.0,
             "solrad_annual": pvwatts_data.get("solradAnnual"),
+            # Production per kW = Annual Production / System Capacity
+            "annual_production_per_kw": round((annual_production or pvwatts_data.get("annualProduction", 0)) / system_capacity, 1) if system_capacity and system_capacity > 0 else None,
             "status": "completed",
             "panel_id": panel_id,
             "panel_count": panel_count,

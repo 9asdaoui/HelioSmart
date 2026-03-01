@@ -4,6 +4,46 @@ from datetime import datetime
 from enum import Enum
 
 
+class PanelInfo(BaseModel):
+    """Nested panel data returned inside EstimationResponse"""
+    id: int
+    name: str
+    brand: Optional[str] = None
+    type: Optional[str] = None
+    panel_rated_power: float          # Watts
+    module_efficiency: Optional[float] = None
+    warranty_years: Optional[int] = None
+    connector_type: Optional[str] = None
+    width_mm: Optional[float] = None
+    height_mm: Optional[float] = None
+    num_of_cells: Optional[int] = None
+    open_circuit_voltage: Optional[float] = None
+    short_circuit_current: Optional[float] = None
+    maximum_operating_voltage_vmpp: Optional[float] = None
+    maximum_operating_current_impp: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+class InverterInfo(BaseModel):
+    """Nested inverter data returned inside EstimationResponse"""
+    id: int
+    name: str
+    brand: Optional[str] = None
+    nominal_ac_power_kw: float
+    max_dc_input_power: Optional[float] = None
+    efficiency_max: Optional[float] = None
+    no_of_mppt_ports: Optional[int] = None
+    max_strings_per_mppt: Optional[int] = None
+    phase_type: Optional[str] = None
+    warranty: Optional[int] = None
+    ip_rating: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class EstimationStatus(str, Enum):
     """Estimation status"""
     DRAFT = "draft"
@@ -89,6 +129,7 @@ class EstimationUpdate(BaseModel):
     usable_area: Optional[float] = None
     usable_area_m2: Optional[float] = None
     roof_type_detected: Optional[str] = None
+    site_plan_snapshot: Optional[str] = None
     inverter_design: Optional[Dict[str, Any]] = None
     inverter_combos: Optional[List[Dict[str, Any]]] = None
 
@@ -109,6 +150,7 @@ class EstimationResponse(EstimationBase):
     meters_per_pixel: Optional[float] = None
     panel_grid_image: Optional[str] = None
     visualization_image: Optional[str] = None
+    site_plan_snapshot: Optional[str] = None
     panel_grid: Optional[Dict[str, Any]] = None
     panel_positions: Optional[List[Dict[str, Any]]] = None
     dc_monthly: Optional[Dict[str, Any]] = None
@@ -133,7 +175,10 @@ class EstimationResponse(EstimationBase):
     panel_orientation: Optional[str] = None
     inverter_design: Optional[Dict[str, Any]] = None
     inverter_combos: Optional[List[Dict[str, Any]]] = None
-    stringing_details: Optional[Dict[str, Any]] = None
+    stringing_details: Optional[List[Dict[str, Any]]] = None
+    # Resolved equipment details (populated by the API endpoint)
+    panel_info: Optional[PanelInfo] = None
+    inverter_info: Optional[InverterInfo] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     

@@ -8,6 +8,7 @@ import Panels from './pages/Panels'
 import Inverters from './pages/Inverters'
 import Utilities from './pages/Utilities'
 import Configurations from './pages/Configurations'
+import Chatbot from './pages/Chatbot'
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Route path="/estimations" element={<Estimations />} />
           <Route path="/estimations/create" element={<CreateEstimation />} />
           <Route path="/estimations/:id" element={<EstimationDetails />} />
+          <Route path="/chatbot" element={<Chatbot />} />
           
           {/* Admin CRUD routes */}
           <Route path="/admin/panels" element={<Panels />} />

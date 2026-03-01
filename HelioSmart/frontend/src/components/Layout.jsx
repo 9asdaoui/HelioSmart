@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Sun, Home, FileText, Box, Zap, Building, Settings, Plus, ChevronDown } from 'lucide-react'
+import { Sun, Home, FileText, Box, Zap, Building, Settings, Plus, ChevronDown, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 
 export default function Layout({ children }) {
@@ -61,7 +61,19 @@ export default function Layout({ children }) {
                 <Plus className="w-5 h-5" />
                 <span className="font-medium">New Estimation</span>
               </Link>
-              
+
+              <Link
+                to="/chatbot"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                  isActive('/chatbot')
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <MessageSquare className="w-5 h-5" />
+                <span className="font-medium">Chatbot</span>
+              </Link>
+
               {/* Admin Dropdown */}
               <div className="relative">
                 <button

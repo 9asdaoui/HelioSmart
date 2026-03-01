@@ -78,3 +78,33 @@ export const configurationsAPI = {
   bulkUpdate: (data) => api.put('/solar-configurations/bulk', data),
   delete: (id) => api.delete(`/solar-configurations/${id}`),
 }
+
+// Chatbot
+export const chatbotAPI = {
+  getStatus: () => api.get('/chatbot/status'),
+  chat: (query, language = 'en', maxTokens = 400, useRag = true) =>
+    api.post('/chatbot/chat', {
+      query,
+      language,
+      max_tokens: maxTokens,
+      use_rag: useRag,
+    }),
+  chatWithTTS: (query, language = 'en', maxTokens = 400, useRag = true) =>
+    api.post('/chatbot/chat-with-tts', {
+      query,
+      language,
+      max_tokens: maxTokens,
+      use_rag: useRag,
+    }),
+  textToSpeech: (text, language = 'en') =>
+    api.post('/chatbot/tts', { text, language }, { responseType: 'blob' }),
+  uploadAudio: (audioFile) => {
+    const formData = new FormData()
+    formData.append('audio', audioFile)
+    return api.post('/chatbot/upload-audio', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+}

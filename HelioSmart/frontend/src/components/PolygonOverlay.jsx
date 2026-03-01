@@ -1,64 +1,56 @@
 import { useEffect, useRef, useState } from 'react'
 import PropTypes from 'prop-types'
+import solarPanelSvg from '@/assets/solar-panel.svg'
 
 /**
  * PolygonOverlay Component
- * Displays SAM service polygon detection results and panel placements
- * Shows captured satellite image with polygon overlays drawn on canvas
+ * Displays SAM service polygon detection results and photo-realistic panel placements.
+ * Renders each panel using a monocrystalline solar panel texture instead of flat colors.
  */
-export default function PolygonOverlay({ visualization, capturedImage, onApprove, onReject, panelPositions }) {
+export default function PolygonOverlay({ visualization, capturedImage, onApprove, onReject, panelPositions, onSnapshotReady }) {
   const canvasRef = useRef(null)
   const [imageLoaded, setImageLoaded] = useState(false)
   const [showPanels, setShowPanels] = useState(true)
 
-  // Draw polygons and panels on the captured image
+  // Draw polygons and photo-realistic panels on the captured image
   useEffect(() => {
     if (!canvasRef.current || !capturedImage) return
 
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
-    const img = new Image()
+    const bgImg = new Image()
 
-    img.onload = () => {
-      // Set canvas dimensions to match image
-      canvas.width = img.width
-      canvas.height = img.height
-
-      // Draw the captured image
-      ctx.drawImage(img, 0, 0)
+    bgImg.onload = () => {
+      canvas.width = bgImg.width
+      canvas.height = bgImg.height
+      ctx.drawImage(bgImg, 0, 0)
 
       // Draw usable polygon (green) if available
       if (visualization?.usable_polygon && visualization.usable_polygon.length > 0) {
         ctx.beginPath()
         ctx.strokeStyle = '#22c55e'
         ctx.lineWidth = 3
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.3)'
-
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'
         const polygon = visualization.usable_polygon
-        if (polygon.length > 0) {
-          ctx.moveTo(polygon[0][0], polygon[0][1])
-          for (let i = 1; i < polygon.length; i++) {
-            ctx.lineTo(polygon[i][0], polygon[i][1])
-          }
-          ctx.closePath()
-          ctx.fill()
-          ctx.stroke()
+        ctx.moveTo(polygon[0][0], polygon[0][1])
+        for (let i = 1; i < polygon.length; i++) {
+          ctx.lineTo(polygon[i][0], polygon[i][1])
         }
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
       }
 
-      // Draw roof polygon (blue) if different from usable
+      // Draw roof polygon (blue dashed) if different from usable
       if (visualization?.roof_polygon && visualization.roof_polygon.length > 0) {
         const roofPoly = visualization.roof_polygon
         const usablePoly = visualization.usable_polygon
-
-        // Only draw if different from usable polygon
         if (JSON.stringify(roofPoly) !== JSON.stringify(usablePoly)) {
           ctx.beginPath()
           ctx.strokeStyle = '#3b82f6'
           ctx.lineWidth = 2
           ctx.setLineDash([5, 5])
-          ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'
-
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.08)'
           ctx.moveTo(roofPoly[0][0], roofPoly[0][1])
           for (let i = 1; i < roofPoly.length; i++) {
             ctx.lineTo(roofPoly[i][0], roofPoly[i][1])
@@ -70,12 +62,11 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
         }
       }
 
-      // Draw obstacles (red) if available
+      // Draw obstacles (red)
       if (visualization?.obstacles && visualization.obstacles.length > 0) {
         ctx.strokeStyle = '#ef4444'
         ctx.lineWidth = 2
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.4)'
-
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.35)'
         visualization.obstacles.forEach(obstacle => {
           if (obstacle && obstacle.length > 0) {
             ctx.beginPath()
@@ -90,41 +81,91 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
         })
       }
 
-      // Draw panel placements (yellow/orange) if available and enabled
+      // ---- Photo-Realistic Panel Rendering ----
       if (showPanels && panelPositions && panelPositions.length > 0) {
-        ctx.strokeStyle = '#f97316'  // Orange
-        ctx.lineWidth = 1.5
-        ctx.fillStyle = 'rgba(251, 191, 36, 0.6)'  // Yellow with transparency
+        const panelImg = new Image()
+        panelImg.onload = () => {
+          panelPositions.forEach((panel) => {
+            if (panel.corners && panel.corners.length >= 4) {
+              const [c0, c1, c2, c3] = panel.corners
+              // Calculate panel bounding dimensions
+              const w = Math.hypot(c1[0] - c0[0], c1[1] - c0[1])
+              const h = Math.hypot(c3[0] - c0[0], c3[1] - c0[1])
+              // Calculate rotation angle from top edge
+              const angle = Math.atan2(c1[1] - c0[1], c1[0] - c0[0])
 
-        panelPositions.forEach((panel, index) => {
-          if (panel.corners && panel.corners.length >= 4) {
-            ctx.beginPath()
-            ctx.moveTo(panel.corners[0][0], panel.corners[0][1])
-            for (let i = 1; i < panel.corners.length; i++) {
-              ctx.lineTo(panel.corners[i][0], panel.corners[i][1])
-            }
-            ctx.closePath()
-            ctx.fill()
-            ctx.stroke()
+              ctx.save()
+              // Move to panel top-left corner and rotate
+              ctx.translate(c0[0], c0[1])
+              ctx.rotate(angle)
 
-            // Optionally draw panel number
-            if (panel.center_x && panel.center_y) {
-              ctx.fillStyle = '#1f2937'  // Dark gray text
-              ctx.font = 'bold 10px Arial'
-              ctx.textAlign = 'center'
-              ctx.textBaseline = 'middle'
-              ctx.fillText(String(panel.id || index + 1), panel.center_x, panel.center_y)
-              ctx.fillStyle = 'rgba(251, 191, 36, 0.6)'  // Reset fill color
+              // Clip to exact panel shape for clean edges
+              ctx.beginPath()
+              ctx.rect(0, 0, w, h)
+              ctx.clip()
+
+              // Draw the solar panel texture image
+              ctx.drawImage(panelImg, 0, 0, w, h)
+
+              // Dark aluminum frame border
+              ctx.strokeStyle = '#1a1a2e'
+              ctx.lineWidth = 1.5
+              ctx.strokeRect(0, 0, w, h)
+
+              // Subtle glass reflection highlight (top-left to center)
+              const reflectionGrad = ctx.createLinearGradient(0, 0, w * 0.6, h * 0.6)
+              reflectionGrad.addColorStop(0, 'rgba(255,255,255,0.12)')
+              reflectionGrad.addColorStop(0.5, 'rgba(255,255,255,0.04)')
+              reflectionGrad.addColorStop(1, 'rgba(255,255,255,0)')
+              ctx.fillStyle = reflectionGrad
+              ctx.fillRect(0, 0, w, h)
+
+              ctx.restore()
             }
-          }
-        })
+          })
+          setImageLoaded(true)
+          if (onSnapshotReady) onSnapshotReady(canvas.toDataURL('image/jpeg', 0.93))
+        }
+        panelImg.onerror = () => {
+          // Fallback: draw dark blue rectangles if texture fails to load
+          panelPositions.forEach((panel) => {
+            if (panel.corners && panel.corners.length >= 4) {
+              const [c0, c1, c2, c3] = panel.corners
+              const w = Math.hypot(c1[0] - c0[0], c1[1] - c0[1])
+              const h = Math.hypot(c3[0] - c0[0], c3[1] - c0[1])
+              const angle = Math.atan2(c1[1] - c0[1], c1[0] - c0[0])
+              ctx.save()
+              ctx.translate(c0[0], c0[1])
+              ctx.rotate(angle)
+              ctx.fillStyle = '#1a2f4a'
+              ctx.fillRect(0, 0, w, h)
+              ctx.strokeStyle = '#0f1b2d'
+              ctx.lineWidth = 1.5
+              ctx.strokeRect(0, 0, w, h)
+              // Draw grid lines like monocrystalline cells
+              ctx.strokeStyle = 'rgba(136,153,170,0.4)'
+              ctx.lineWidth = 0.5
+              for (let x = w / 6; x < w; x += w / 6) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
+              }
+              for (let y = h / 3; y < h; y += h / 3) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+              }
+              ctx.restore()
+            }
+          })
+          setImageLoaded(true)
+          if (onSnapshotReady) onSnapshotReady(canvas.toDataURL('image/jpeg', 0.93))
+        }
+        panelImg.src = solarPanelSvg
+      } else {
+        setImageLoaded(true)
+        if (onSnapshotReady) onSnapshotReady(canvas.toDataURL('image/jpeg', 0.93))
       }
-
-      setImageLoaded(true)
     }
 
-    img.src = capturedImage
-  }, [capturedImage, visualization, panelPositions, showPanels])
+    bgImg.src = capturedImage
+  }, [capturedImage, visualization, panelPositions, showPanels, onSnapshotReady])
 
   if (!visualization) {
     return (
@@ -187,9 +228,9 @@ export default function PolygonOverlay({ visualization, capturedImage, onApprove
                   onChange={(e) => setShowPanels(e.target.checked)}
                   className="rounded"
                 />
-                <div className="w-4 h-4 bg-yellow-400 opacity-60 border-2 border-orange-500 rounded"></div>
+                <div className="w-4 h-4 rounded" style={{ background: 'linear-gradient(135deg, #1a2744, #1e3a5f)', border: '1.5px solid #1a1a2e' }}></div>
                 <label htmlFor="showPanels" className="cursor-pointer">
-                  Panels ({panelPositions.length})
+                  Solar Panels ({panelPositions.length})
                 </label>
               </div>
             )}
@@ -292,6 +333,7 @@ PolygonOverlay.propTypes = {
   capturedImage: PropTypes.string,
   onApprove: PropTypes.func,
   onReject: PropTypes.func,
+  onSnapshotReady: PropTypes.func,
   panelPositions: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.number,
