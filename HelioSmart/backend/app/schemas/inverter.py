@@ -57,8 +57,9 @@ class InverterUpdate(BaseModel):
 class InverterResponse(InverterBase):
     """Schema for inverter response"""
     id: int
+    vendor_id: Optional[int] = None
+    vendor_company_name: Optional[str] = None  # populated by marketplace endpoint
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
+
+    model_config = {"from_attributes": True}

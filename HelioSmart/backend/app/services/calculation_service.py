@@ -147,6 +147,7 @@ class EstimationCalculationService:
         energy_need_kwh_per_year: float,
         solar_production_factor: float,
         coverage_target: float = 1.0,
+        vendor_id: Optional[int] = None,
     ) -> Optional[Dict]:
         """
         Select the best-fit panel for the installation based on usable area and energy need.
@@ -163,7 +164,11 @@ class EstimationCalculationService:
         from app.models import Panel
 
         # Get all active panels sorted by score DESC (best first)
-        panels = self.db.query(Panel).filter(Panel.status == "active").order_by(Panel.score.desc()).all()
+        # If vendor_id specified, restrict to that vendor's panels only
+        panel_q = self.db.query(Panel).filter(Panel.status == "active")
+        if vendor_id is not None:
+            panel_q = panel_q.filter(Panel.vendor_id == vendor_id)
+        panels = panel_q.order_by(Panel.score.desc()).all()
 
         # If no active panels, try default panel
         if not panels:

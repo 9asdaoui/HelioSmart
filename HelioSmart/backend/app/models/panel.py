@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -46,10 +46,14 @@ class Panel(Base):
     connector_type = Column(String(100), nullable=True)
     score = Column(Float, default=0.0)
     status = Column(String(20), default="active")
-    
+
+    # Vendor ownership (nullable — pre-existing panels have no vendor)
+    vendor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     # Relationships
     estimations = relationship("Estimation", back_populates="panel")
+    vendor = relationship("User", back_populates="panels", foreign_keys=[vendor_id])

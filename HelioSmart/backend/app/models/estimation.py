@@ -21,9 +21,10 @@ class Estimation(Base):
     panel_id = Column(Integer, ForeignKey("panels.id", ondelete="SET NULL"), nullable=True)
     utility_id = Column(Integer, ForeignKey("utilities.id", ondelete="SET NULL"), nullable=True)
     
-    # Customer information
+    # Customer information (kept for legacy reports; populated from auth user)
     customer_name = Column(String(255), nullable=True)
     email = Column(String(255), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     
     # Location data
     latitude = Column(Float, nullable=False)

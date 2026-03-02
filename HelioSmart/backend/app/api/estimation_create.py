@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from app.core.database import get_db
+from app.core.security import get_optional_current_user
 from app.models import Estimation, Panel, Inverter, SolarConfiguration, Utility
 from app.services.pvwatts_service import PVWattsService
 from app.services.calculation_service import EstimationCalculationService
@@ -50,6 +51,8 @@ async def create_project(
     email: Optional[str] = Form(None),
     coverage_percentage: Optional[float] = Form(80),
     roof_points: Optional[str] = Form(None),  # JSON array of {x, y} points from Step 5
+    vendor_id: Optional[int] = Form(None),     # Material provider — None → use HelioSmart defaults
+    current_user=Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -197,6 +200,7 @@ async def create_project(
                 annual_usage,
                 solar_production_factor,
                 coverage_target,
+                vendor_id=vendor_id,
             )
 
         # ========= 11. Use best-fit panel values for estimation =========
@@ -206,12 +210,15 @@ async def create_project(
             annual_production = best_fit_panel["total_annual_production_kwh"]
             panel_id = panel.id
         else:
-            # Fallback to default panel
+            # Fallback to default panel — respect vendor_id if supplied
             default_panel_id = _get_config_value(db, "panel_id", 21)
-            panel = db.query(Panel).filter(Panel.id == default_panel_id).first()
+            fallback_q = db.query(Panel).filter(Panel.status == "active")
+            if vendor_id is not None:
+                fallback_q = fallback_q.filter(Panel.vendor_id == vendor_id)
+            panel = fallback_q.filter(Panel.id == default_panel_id).first()
 
             if not panel:
-                panel = db.query(Panel).filter(Panel.status == "active").first()
+                panel = fallback_q.first()
 
             if panel:
                 panel_count = (
@@ -422,8 +429,9 @@ async def create_project(
             "zip_code": zip_code,
             "country": country,
             "roof_image_path": roof_image_path,
-            "customer_name": customer_name,
-            "email": email,
+            "customer_name": (current_user.company_name or current_user.email) if current_user else customer_name,
+            "email": current_user.email if current_user else email,
+            "user_id": current_user.id if current_user else None,
             "annual_usage_kwh": annual_usage,
             "annual_cost": annual_cost,
             "monthly_usage": json.dumps(monthly_usage) if monthly_usage else None,

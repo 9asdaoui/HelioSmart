@@ -13,6 +13,7 @@ from app.core.database import Base
 
 # Import all models to ensure they're registered with Base
 from app.models import (
+    User,
     Estimation,
     Panel,
     Inverter,
