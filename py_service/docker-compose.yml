@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        DOWNLOAD_MODEL: "true"  # Set to false if mounting model from host
+        DOWNLOAD_MODEL: "false"  # Set to false if mounting model from host
     container_name: heliosmart-sam-service
     ports:
       - "8889:8889"
@@ -40,7 +40,7 @@ services:
       context: .
       dockerfile: Dockerfile.cpu
       args:
-        DOWNLOAD_MODEL: "true"
+        DOWNLOAD_MODEL: "false"
     container_name: heliosmart-sam-service-cpu
     ports:
       - "8889:8889"
