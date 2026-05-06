@@ -33,6 +33,9 @@
 
 | Done | Priority | Task | File(s) to Modify | Notes |
 |------|----------|------|-------------------|-------|
+| ⬜ | P0 | **Fix hard-coded SCALE_CORRECTION = 2.0** | `py_service/api_service.py` | Currently silently breaks non-html2canvas clients. Any caller not using html2canvas gets 2× wrong scale and 4× wrong area causing silent data corruption. Remove hardcoded correction or make it configurable per request |
+| ⬜ | P0 | **Add authentication to GPU endpoint** | `py_service/api_service.py` | Zero auth on any endpoint. Anyone on network can run expensive SAM inference and exhaust GPU memory. Add API key middleware or JWT validation |
+| ⬜ | P0 | **Remove dead panel_placement_service.py or integrate it** | `py_service/panel_placement_service.py`, `py_service/api_service.py` | panel_placement_service.py is never imported/called. All logic duplicated inline in api_service.py. Two versions will drift - consolidate or delete |
 | ⬜ | P0 | Download SAM model (2.4GB) | N/A - Download to `py_service/` | `wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth` or use ViT-B (375MB) |
 | ⬜ | P1 | Integrate py_service with main backend | `HelioSmart/backend/app/services/placeholder_apis.py` | Replace placeholder with actual py_service calls |
 | ⬜ | P1 | Add py_service to docker-compose | `HelioSmart/docker-compose.dev.yml`, `HelioSmart/docker-compose.yml` | Add as separate service |
@@ -147,6 +150,9 @@
 
 | Done | Priority | Issue | Location | Description |
 |------|----------|-------|----------|-------------|
+| ⬜ | P0 | **Hard-coded scale correction bug** | `py_service/api_service.py` | SCALE_CORRECTION = 2.0 causes 4× area calculation errors for non-html2canvas clients - silent data corruption |
+| ⬜ | P0 | **No authentication on py_service** | `py_service/api_service.py` | Open GPU endpoint vulnerable to abuse and DoS - anyone can exhaust GPU memory |
+| ⬜ | P0 | **Dead code in panel_placement_service.py** | `py_service/` | File never imported/used; logic duplicated in api_service.py - will cause maintenance issues |
 | ⬜ | P1 | SAM model file missing | `py_service/` | Service won't work without 2.4GB model file |
 | ⬜ | P1 | Placeholder data in estimations | Backend services | Using mock data until py_service integrated |
 | ⬜ | P2 | Chatbot requires Ollama running | `HelioSmart/backend/app/services/chatbot_service.py` | Falls back if unavailable |
@@ -189,6 +195,11 @@
 
 ## 🎯 Immediate Next Steps (This Week)
 
+### 🚨 Day 0: Critical Fixes (DO THESE FIRST)
+1. ⬜ **Fix SCALE_CORRECTION bug in py_service** - Remove hardcoded 2.0 multiplier causing area calculation errors
+2. ⬜ **Add authentication to py_service** - Implement API key or JWT validation to prevent abuse
+3. ⬜ **Consolidate panel placement logic** - Either use panel_placement_service.py or delete it (currently dead code)
+
 ### Day 1-2: Core Functionality
 1. ⬜ Configure NREL PVWatts API key
 2. ⬜ Configure Google Maps API key
@@ -208,6 +219,14 @@
 ---
 
 ## 📝 Notes & Decisions
+
+### ⚠️ Critical Issues Discovered (May 6, 2026)
+**py_service has 3 critical P0 bugs that must be fixed before production**:
+1. **Scale Correction Bug**: Hard-coded `SCALE_CORRECTION = 2.0` causes 4× area errors for non-html2canvas clients
+2. **Zero Authentication**: GPU endpoint is wide open - vulnerable to abuse and DoS attacks
+3. **Dead Code**: `panel_placement_service.py` is never used; logic is duplicated inline causing maintenance risk
+
+**Fix order**: These must be addressed before integration testing or deployment.
 
 ### Architecture Decisions
 - **Service Separation**: py_service is separate to allow GPU scaling independent of main app

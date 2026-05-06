@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   db:
@@ -96,8 +94,7 @@ volumes:
   hf_cache:
     driver: local
   ollama_data:
-    external: true
-    name: mediassist_ollama_data
+    driver: local
 
 networks:
   default:
