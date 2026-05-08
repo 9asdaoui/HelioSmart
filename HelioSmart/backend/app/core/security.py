@@ -20,10 +20,16 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days (MVP convenience)
 # ---------- Passwords ----------
 
 def hash_password(plain: str) -> str:
+    # bcrypt has 72-byte password limit - truncate if needed
+    if len(plain.encode('utf-8')) > 72:
+        plain = plain.encode('utf-8')[:72].decode('utf-8', errors='ignore')
     return pwd_context.hash(plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    # bcrypt has 72-byte password limit - truncate if needed
+    if len(plain.encode('utf-8')) > 72:
+        plain = plain.encode('utf-8')[:72].decode('utf-8', errors='ignore')
     return pwd_context.verify(plain, hashed)
 
 

@@ -78,7 +78,8 @@ def load_sam_model():
                 f"1. Download from: {MODEL_DOWNLOAD_URL}\n"
                 f"2. Place it in: {os.path.abspath('.')}\n"
                 f"3. Or run: wget {MODEL_DOWNLOAD_URL}\n"
-                f"\n⚠️  Service will run in FALLBACK mode (placeholder data only)"
+                f"\n⚠️  Service will NOT work until model is loaded\n"
+                f"\n❌ All /analyze_roof requests will fail with error"
             )
             print(error_msg)
             model_error = "Model file not found"
@@ -159,7 +160,8 @@ def load_sam_model():
             f"1. Check if you have enough GPU/RAM memory\n"
             f"2. Try using CPU by setting CUDA_VISIBLE_DEVICES=''\n"
             f"3. Download a smaller model (ViT-B instead of ViT-H)\n"
-            f"\n⚠️  Service will run in FALLBACK mode (placeholder data only)"
+            f"\n⚠️  Service will NOT work until model is loaded\n"
+            f"\n❌ All /analyze_roof requests will fail with error"
         )
         print(error_msg)
         model_error = f"Runtime error: {str(e)}"
@@ -170,7 +172,8 @@ def load_sam_model():
         error_msg = (
             f"❌ Unexpected error loading SAM model:\n{str(e)}\n"
             f"Type: {type(e).__name__}\n"
-            f"\n⚠️  Service will run in FALLBACK mode (placeholder data only)"
+            f"\n⚠️  Service will NOT work until model is loaded\n"
+            f"\n❌ All /analyze_roof requests will fail with error"
         )
         print(error_msg)
         model_error = f"Unexpected error: {str(e)}"
@@ -247,10 +250,20 @@ def show_anns(anns):
 
 def get_fallback_response(image_array, center_lat, center_lng, scale_meters_per_pixel):
     """
-    Generate fallback/placeholder response when SAM model is not available
-    
-    Returns simple rectangular roof area approximation
+    This function is removed - SAM model must be loaded for roof analysis.
+    Keeping stub for backward compatibility but raises error.
     """
+    raise RuntimeError(
+        "SAM model is not loaded. Cannot analyze roof image.\n"
+        "Possible causes:\n"
+        "1. Model file not found: /app/sam_vit_h_4b8939.pth\n"
+        "2. Insufficient memory to load model\n"
+        "3. Model loading failed during startup\n"
+        "Check service logs: docker logs heliosmart-sam-service-cpu"
+    )
+
+def _old_fallback_data_removed(image_array, center_lat, center_lng, scale_meters_per_pixel):
+    """REMOVED: Fallback data generation no longer supported"""
     h, w = image_array.shape[:2]
     
     # Create a simple rectangular polygon (80% of image)
@@ -297,9 +310,7 @@ def get_fallback_response(image_array, center_lat, center_lng, scale_meters_per_
             "usable_area_percentage": 100.0,
             "obstacle_area_percentage": 0.0,
             "total_area_m2": area_m2
-        },
-        "_fallback": True,
-        "_fallback_reason": model_error or "SAM model not loaded"
+        }
     }
 
 def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per_pixel, roof_points=None):
@@ -318,34 +329,63 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
     """
     global predictor, mask_generator, model_loaded
     
-    # Check if model is loaded
-    if not model_loaded or predictor is None or mask_generator is None:
-        print("⚠️  SAM model not available, using fallback response")
-        return get_fallback_response(image_array, center_lat, center_lng, scale_meters_per_pixel)
+    print("\n" + "="*60)
+    print("🔬 STARTING SAM IMAGE PROCESSING WORKFLOW")
+    print("="*60)
     
+    # Check if model is loaded - FAIL if not loaded
+    if not model_loaded or predictor is None or mask_generator is None:
+        print("❌ FATAL: SAM model not loaded!")
+        raise RuntimeError(
+            f"SAM model is not loaded. Cannot process image.\n"
+            f"Model status: loaded={model_loaded}, predictor={predictor is not None}, "
+            f"mask_generator={mask_generator is not None}\n"
+            f"Check model file exists at: /app/sam_vit_h_4b8939.pth\n"
+            f"Check startup logs: docker logs heliosmart-sam-service-cpu"
+        )
+    
+    print(f"✅ SAM model loaded successfully")
+    print(f"📊 Image shape: {image_array.shape}")
+    
+    print("\n📝 STEP 1: Converting image to RGB...")
     # Step 1: Convert image to RGB
     if len(image_array.shape) == 3 and image_array.shape[2] == 3:
         image_rgb = image_array
+        print("   ✓ Image already in RGB format")
     else:
         image_rgb = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
+        print("   ✓ Converted from BGR to RGB")
     
     image_final = image_rgb.copy()
+    print(f"   ✓ Image RGB shape: {image_rgb.shape}")
     
+    print("\n📝 STEP 2: Applying edge detection...")
     # Step 2: Apply Gaussian Blur and Canny Edge Detection
     gray_image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+    print(f"   ✓ Grayscale shape: {gray_image.shape}")
     blurred_image = cv2.GaussianBlur(gray_image, (5, 5), 0)
+    print("   ✓ Gaussian blur applied")
     edges = cv2.Canny(blurred_image, 100, 200)
+    print("   ✓ Canny edge detection complete")
     edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
     enhanced_image = cv2.addWeighted(image_rgb, 0.8, edges_colored, 0.2, 0)
     image_rgb = enhanced_image
+    print("   ✓ Enhanced image created")
     
+    print("\n📝 STEP 3: Setting up bounding box...")
     # Step 3: Use entire image as bounding box (no rectangle selection)
     h, w = image_rgb.shape[:2]
     input_box = np.array([[0, 0], [w, h]], dtype=int)
+    print(f"   ✓ Image dimensions: {w}×{h} px")
+    print(f"   ✓ Bounding box: {input_box.tolist()}")
     
+    print("\n📝 STEP 4: Setting image in SAM predictor...")
     # Step 4: Initialize SAM predictor and predict mask
+    print("   🔄 Calling predictor.set_image()...")
     predictor.set_image(image_rgb)
+    print("   ✅ Image set in predictor successfully!")
     
+    print("\n📝 STEP 5: Preparing point prompts...")
     # Convert user-placed points to pixel coordinates for SAM point prompts
     point_coords = None
     point_labels = None
@@ -358,24 +398,40 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
         ])
         # All points are positive prompts (label = 1 means foreground/roof)
         point_labels = np.ones(len(roof_points), dtype=int)
-        print(f"🎯 Using {len(roof_points)} point prompts for SAM prediction")
+        print(f"   🎯 Using {len(roof_points)} point prompts for SAM prediction")
+        print(f"   Point coordinates: {point_coords.tolist()}")
+        print(f"   Point labels: {point_labels.tolist()}")
+    else:
+        print("   ℹ️  No point prompts provided, using bounding box only")
     
+    print("\n📝 STEP 6: Running SAM predictor.predict()...")
+    print("   ⏳ This may take 10-60 seconds on CPU...")
     # Predict with point prompts if available, otherwise just use bounding box
     if point_coords is not None:
+        print("   🔄 Predicting with point prompts + bounding box...")
         masks, scores, logits = predictor.predict(
             point_coords=point_coords,
             point_labels=point_labels,
             box=input_box,
             multimask_output=True,
         )
+        print(f"   ✅ Prediction complete! Generated {len(masks)} masks")
     else:
+        print("   🔄 Predicting with bounding box only...")
         masks, scores, logits = predictor.predict(
             box=input_box,
             multimask_output=True,
         )
+        print(f"   ✅ Prediction complete! Generated {len(masks)} masks")
+    
+    print(f"   Scores: {scores}")
+    print(f"   Mask shapes: {[m.shape for m in masks]}")
     
     # Select the best mask
-    best_mask = masks[np.argmax(scores)]
+    best_idx = np.argmax(scores)
+    best_mask = masks[best_idx]
+    print(f"   🏆 Best mask index: {best_idx} (score: {scores[best_idx]:.4f})")
+    print(f"   Best mask coverage: {best_mask.sum()} pixels ({best_mask.sum()/(h*w)*100:.1f}% of image)")
     
     # Step 5: Create cut-out image
     mask_coords = np.where(best_mask)
@@ -406,50 +462,67 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
         print(f"   🔍 Zoom applied: cropped {zoom_x_max-zoom_x_min}×{zoom_y_max-zoom_y_min} → {cut_out_image.shape[1]}×{cut_out_image.shape[0]}")
     # else: cut_out_image stays at original resolution with non-roof pixels = black
     
-    # Step 7: Automatic mask generation on the cut-out image
-    # The cut_out still has non-roof pixels = black, so mask_generator works on the
-    # correct spatial scale. The largest generated mask = main roof surface.
-    masks = mask_generator.generate(cut_out_image)
-    colors, sorted_masks = show_anns(masks)
-    
-    # Step 8: Build the usable roof mask
+    # Step 7: Obstacle detection (only if user didn't provide points)
     # ─────────────────────────────────────────────────────────────────────────
-    # BUG FIX: On a cut-out image (non-roof pixels = black), mask_generator
-    # treats the large black background as the single biggest region →
-    # sorted_masks[0] IS the background, NOT the roof.
+    # PERFORMANCE OPTIMIZATION:
+    # When user provides roof points, predictor.predict() already gives us an
+    # excellent roof mask (typically 95%+ confidence). Running mask_generator.generate()
+    # on the entire cut-out image is VERY EXPENSIVE on CPU (90+ seconds, often >3 min)
+    # and causes backend timeouts.
     #
-    # Correct approach:
-    #   • Use best_mask (from predictor, Step 4) as the authoritative roof shape.
-    #   • Use mask_generator sub-masks that overlap significantly with best_mask
-    #     as obstacle candidates (sub-features on the roof surface).
+    # Strategy:
+    #   • User provided points → Use best_mask directly (fast, <1 second)
+    #   • No user points → Run mask_generator for automatic detection
     # ─────────────────────────────────────────────────────────────────────────
     best_mask_pixels = best_mask.sum()
     best_coverage = best_mask_pixels / (h * w)
-    print(f"   🏠 Predictor roof mask: {best_coverage*100:.1f}% of image ({best_mask_pixels} px)")
-
-    # Obstacle candidates = sub-masks whose pixels are MOSTLY inside best_mask
-    obstacle_candidates = []
-    for mask_data in sorted_masks:
-        seg = mask_data['segmentation']
-        if seg.sum() == 0:
-            continue
-        overlap_ratio = (seg & best_mask).sum() / seg.sum()
-        seg_coverage  = seg.sum() / (h * w)
-        # Accept as an obstacle candidate if:
-        #   ≥60 % of its pixels lie inside the roof boundary (not background)
-        #   AND it doesn't cover the whole image (i.e. not the background itself)
-        if overlap_ratio >= 0.60 and seg_coverage < 0.40:
-            obstacle_candidates.append(mask_data)
-
-    print(f"   🔧 {len(obstacle_candidates)} sub-feature candidate(s) found inside roof boundary")
-
-    # Subtract all obstacle candidates from the roof to get clean usable area
-    obstacle_union = np.zeros_like(best_mask, dtype=bool)
-    for mask_data in obstacle_candidates:
-        obstacle_union |= mask_data['segmentation']
-
-    first_mask_cut = best_mask & ~obstacle_union
+    print(f"\n   🏠 Predictor roof mask: {best_coverage*100:.1f}% of image ({best_mask_pixels} px)")
     
+    obstacle_candidates = []
+    
+    if point_coords is not None and len(point_coords) > 0:
+        # User provided points → Skip expensive mask_generator, use predictor mask directly
+        print("\n📝 STEP 7: Skipping automatic mask generation (using user-provided points)")
+        print(f"   ⚡ FAST MODE: Using predictor mask directly (score: {scores[best_idx]:.4f})")
+        print(f"   ⏩ Skipped mask_generator.generate() to avoid 3+ minute CPU processing")
+        print(f"   ✅ User-guided segmentation complete in <5 seconds!")
+        
+        # No obstacle detection when user provides points (they can refine if needed)
+        first_mask_cut = best_mask
+        
+    else:
+        # No user points → Run automatic mask generation for obstacle detection
+        print("\n📝 STEP 7: Running automatic mask generation...")
+        print("   ⏳ mask_generator.generate() may take 30-90 seconds on CPU...")
+        print("   🔄 Calling mask_generator.generate()...")
+        masks = mask_generator.generate(cut_out_image)
+        print(f"   ✅ mask_generator.generate() complete! Got {len(masks)} masks")
+        colors, sorted_masks = show_anns(masks)
+        print(f"   ✓ Sorted {len(sorted_masks)} masks by area")
+        
+        # Use mask_generator sub-masks to detect obstacles on the roof
+        for mask_data in sorted_masks:
+            seg = mask_data['segmentation']
+            if seg.sum() == 0:
+                continue
+            overlap_ratio = (seg & best_mask).sum() / seg.sum()
+            seg_coverage  = seg.sum() / (h * w)
+            # Accept as an obstacle candidate if:
+            #   ≥60 % of its pixels lie inside the roof boundary (not background)
+            #   AND it doesn't cover the whole image (i.e. not the background itself)
+            if overlap_ratio >= 0.60 and seg_coverage < 0.40:
+                obstacle_candidates.append(mask_data)
+
+        print(f"   🔧 {len(obstacle_candidates)} obstacle candidate(s) found inside roof boundary")
+
+        # Subtract all obstacle candidates from the roof to get clean usable area
+        obstacle_union = np.zeros_like(best_mask, dtype=bool)
+        for mask_data in obstacle_candidates:
+            obstacle_union |= mask_data['segmentation']
+
+        first_mask_cut = best_mask & ~obstacle_union
+    
+    print("\n📝 STEP 8: Building JSON response data...")
     # Step 9: Create JSON response data
     roof_data = {
         "image_info": {
@@ -471,9 +544,12 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
         "total_obstacle_area_m2": 0
     }
     
+    print("\n📝 STEP 9: Converting masks to polygons...")
     # Process usable roof area
     if first_mask_cut is not None:
+        print("   🔄 Converting usable roof area to polygons...")
         roof_polygons = mask_to_polygon(first_mask_cut)
+        print(f"   ✓ Extracted {len(roof_polygons)} roof polygons")
         total_usable_area_pixels = 0
         
         for i, polygon in enumerate(roof_polygons):
@@ -495,11 +571,15 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
         roof_data["total_usable_area_pixels"] = total_usable_area_pixels
         roof_data["total_usable_area_m2"] = total_usable_area_pixels * (scale_meters_per_pixel ** 2)
     
+    print("\n📝 STEP 10: Processing obstacles...")
     # Process obstacles — strict noise filter to remove shadow/texture artefacts
     # Rule: only keep obstacles ≥ 2.5 m² (real chimneys, AC units, skylights)
     MIN_OBSTACLE_AREA_M2 = 2.5
+    print(f"   Obstacle candidates: {len(obstacle_candidates)}")
+    print(f"   Minimum obstacle size: {MIN_OBSTACLE_AREA_M2} m²")
 
     if len(obstacle_candidates) > 0:
+        print("   🔄 Converting obstacle masks to polygons...")
         total_obstacle_area_pixels = 0
         filtered_count = 0
 
@@ -538,8 +618,12 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
         if filtered_count > 0:
             print(f"📦 Filtered out {filtered_count} obstacles smaller than {MIN_OBSTACLE_AREA_M2} m²")
     
+    print("\n📝 STEP 11: Building summary...")
     # Add summary
     total_detected_area = roof_data["total_usable_area_pixels"] + roof_data["total_obstacle_area_pixels"]
+    print(f"   Usable roof area: {roof_data['total_usable_area_m2']:.1f} m²")
+    print(f"   Total obstacles: {roof_data['total_obstacle_area_m2']:.1f} m²")
+    print(f"   Total detected area: {total_detected_area * (scale_meters_per_pixel ** 2):.1f} m²")
     roof_data["summary"] = {
         "total_roof_segments": len(roof_data["usable_roof_area"]),
         "total_obstacles": len(roof_data["obstacles"]),
@@ -548,13 +632,20 @@ def process_image_workflow(image_array, center_lat, center_lng, scale_meters_per
         "total_area_m2": roof_data["total_usable_area_m2"] + roof_data["total_obstacle_area_m2"]
     }
     
+    print("\n" + "="*60)
+    print("✅ SAM PROCESSING COMPLETE!")
+    print("="*60)
+    print(f"Summary: {len(roof_data['usable_roof_area'])} roof segments, {len(roof_data['obstacles'])} obstacles")
+    print(f"Usable area: {roof_data['total_usable_area_m2']:.1f} m²")
+    print("\n")
+    
     return roof_data
 
 @app.on_event("startup")
 async def startup_event():
     """
     Load SAM model on startup
-    Continues even if model fails to load (fallback mode)
+    Service requires model to function - requests will fail if model not loaded
     """
     print("\n" + "="*60)
     print("🚀 Starting Roof Segmentation API")
@@ -565,8 +656,9 @@ async def startup_event():
     if success:
         print("\n✅ Service started successfully with SAM model")
     else:
-        print("\n⚠️  Service started in FALLBACK mode")
-        print("📝 API will return placeholder data until model is loaded")
+        print("\n⚠️  Service started WITHOUT SAM model")
+        print("❌ All /analyze_roof requests will FAIL until model is loaded")
+        print("🔧 Check logs above for model loading errors")
     
     print("="*60 + "\n")
 
@@ -590,6 +682,17 @@ async def analyze_roof(
     Returns:
         JSON response with usable roof areas and obstacles as polygons
     """
+    import time
+    start_time = time.time()
+    
+    print("\n" + "#"*70)
+    print("🌐 NEW REQUEST: /analyze_roof")
+    print("#"*70)
+    print(f"📍 Center coordinates: ({center_lat:.6f}, {center_lng:.6f})")
+    print(f"📏 Scale (browser): {scale_meters_per_pixel:.6f} m/px")
+    print(f"📁 Image filename: {image.filename}")
+    print(f"📦 Content type: {image.content_type}")
+    
     try:
         # Validate input parameters
         if not (-90 <= center_lat <= 90):
@@ -648,27 +751,44 @@ async def analyze_roof(
             print(f"   ✅ Image footprint looks correct for a house-level view")
 
         # Process image using the corrected scale
+        # Will raise RuntimeError if SAM model not loaded
+        print(f"\n🔄 Starting SAM processing...")
         result = process_image_workflow(image_array, center_lat, center_lng, effective_scale, parsed_points)
+        print(f"✅ SAM processing returned successfully!")
         
         # Log the detected area
         total_area = result.get("total_usable_area_m2", 0)
         total_pixels = result.get("total_usable_area_pixels", 0)
+        obstacle_count = len(result.get("obstacles", []))
+        print(f"\n📊 RESULTS:")
         print(f"   Detected usable area: {total_pixels:.0f} px² = {total_area:.1f} m²")
-        print(f"   Coverage: {(total_pixels/image_area_pixels*100):.1f}% of image\n")
+        print(f"   Coverage: {(total_pixels/image_area_pixels*100):.1f}% of image")
+        print(f"   Obstacles: {obstacle_count}")
         
-        # Add warning if using fallback mode
-        if not model_loaded:
-            print(f"⚠️  Request processed in FALLBACK mode (placeholder data returned)")
-            result["_warning"] = "SAM model not loaded - using placeholder data. See /model/info for troubleshooting."
+        elapsed = time.time() - start_time
+        print(f"\n⏱️  Total request time: {elapsed:.2f} seconds")
+        print("#"*70)
+        print("✅ REQUEST COMPLETE")
+        print("#"*70 + "\n")
         
         return JSONResponse(content=result)
         
     except HTTPException:
         # Re-raise HTTP exceptions as-is
+        elapsed = time.time() - start_time
+        print(f"\n❌ REQUEST FAILED (HTTP Exception) after {elapsed:.2f}s")
+        print("#"*70 + "\n")
         raise
     except Exception as e:
         error_detail = f"Error processing image: {str(e)}"
-        print(f"❌ {error_detail}")
+        elapsed = time.time() - start_time
+        print(f"\n❌ {error_detail}")
+        print(f"❌ REQUEST FAILED (Exception) after {elapsed:.2f}s")
+        print(f"Exception type: {type(e).__name__}")
+        print(f"Exception traceback:")
+        import traceback
+        traceback.print_exc()
+        print("#"*70 + "\n")
         raise HTTPException(status_code=500, detail=error_detail)
 
 @app.get("/health")

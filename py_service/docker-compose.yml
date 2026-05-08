@@ -48,6 +48,7 @@ services:
       - CUDA_VISIBLE_DEVICES=""  # Force CPU mode
     volumes:
       - ./api_service.py:/app/api_service.py:ro
+      - ./sam_vit_h_4b8939.pth:/app/sam_vit_h_4b8939.pth:ro
     profiles:
       - cpu  # Only start with: docker-compose --profile cpu up
     restart: unless-stopped

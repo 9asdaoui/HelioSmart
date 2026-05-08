@@ -28,54 +28,26 @@ class UsableAreaDetectionService:
             options: Optional parameters for the API (meters_per_pixel, roof_type, etc.)
 
         Returns:
-            Dict with usable area data or None if failed
-        """
-        try:
-            # Try calling the actual Python SAM service
-            sam_service_url = f"{settings.PY_SERVICE_URL}/analyze_roof"
+            Dict with usable area data
             
-            # Call the actual API with proper parameters
-            result = await self.call_actual_api(image_path, options or {}, sam_service_url)
-            
-            if result:
-                logger.info(f"Successfully called Python SAM service. Fallback mode: {result.get('_fallback', False)}")
-                return result
-            else:
-                logger.warning("Python SAM service returned None, using placeholder")
-                return self._get_placeholder_response(options)
-
-        except Exception as e:
-            logger.error(f"Usable area detection error: {str(e)}")
-            return self._get_placeholder_response(options)
-    
-    def _get_placeholder_response(self, options: Dict = None) -> Dict:
+        Raises:
+            Exception: If SAM service is unavailable or returns an error
         """
-        Generate placeholder response when SAM service is unavailable
+        # Call the Python SAM service
+        sam_service_url = f"{settings.PY_SERVICE_URL}/analyze_roof"
         
-        Args:
-            options: Optional parameters
-            
-        Returns:
-            Placeholder data dict
-        """
-        logger.warning("Using PLACEHOLDER for usable area detection API")
-        return {
-            "usable_area": 1000.0,  # pixels²
-            "usable_area_m2": 50.0,  # m²
-            "roof_area": 1200.0,
-            "roof_polygon": [[0, 0], [100, 0], [100, 100], [0, 100]],
-            "usable_polygon": [[10, 10], [90, 10], [90, 90], [10, 90]],
-            "obstacles": [],
-            "roof_mask_image": None,
-            "overlay_image": None,
-            "sam_masks": None,
-            "roof_mask_index": 0,
-            "facade_reduction_ratio": 0.83,
-            "roof_type": options.get("roof_type", "flat") if options else "flat",
-            "facade_filtering_applied": False,
-            "meters_per_pixel": options.get("meters_per_pixel", 0.3) if options else 0.3,
-            "_placeholder": True,
-        }
+        # Call the actual API with proper parameters
+        result = await self.call_actual_api(image_path, options or {}, sam_service_url)
+        
+        if not result:
+            raise Exception(
+                f"SAM service at {settings.PY_SERVICE_URL} returned no data. "
+                "Ensure py_service (SAM) is running: docker ps | grep sam-service"
+            )
+        
+        logger.info(f"Successfully called Python SAM service at {sam_service_url}")
+        return result
+
 
     async def call_actual_api(self, image_path: str, options: Dict, endpoint_url: str) -> Optional[Dict]:
         """
@@ -120,11 +92,18 @@ class UsableAreaDetectionService:
             return self._transform_sam_response(sam_result, options)
 
         except httpx.HTTPError as e:
-            logger.warning(f"Python SAM service HTTP error: {str(e)}")
-            return None
+            logger.error(f"Python SAM service HTTP error: {str(e)}")
+            raise Exception(
+                f"SAM service HTTP error: {str(e)}. "
+                f"Service URL: {endpoint_url}. "
+                "Check if py_service is running: docker ps | grep sam-service"
+            ) from e
         except Exception as e:
             logger.error(f"Python SAM service call failed: {str(e)}")
-            return None
+            raise Exception(
+                f"SAM service error: {str(e)}. "
+                f"Service URL: {endpoint_url}"
+            ) from e
     
     def _transform_sam_response(self, sam_result: Dict, options: Dict) -> Dict:
         """
@@ -185,9 +164,13 @@ class UsableAreaDetectionService:
             "_fallback": sam_result.get("_fallback", False),  # Pass through fallback flag
         }
         
-        # Add warning if present
-        if "_warning" in sam_result:
-            transformed["_warning"] = sam_result["_warning"]
+        # Check if SAM service returned fallback data (model not loaded)
+        if sam_result.get("_fallback"):
+            fallback_reason = sam_result.get("_fallback_reason", "SAM model not loaded")
+            raise Exception(
+                f"SAM service is running but model not loaded: {fallback_reason}. "
+                "Check SAM service logs: docker logs heliosmart-sam-service-cpu"
+            )
         
         return transformed
 
@@ -212,7 +195,7 @@ class PanelPlacementService:
         panel_count: Optional[int] = None,
     ) -> Optional[Dict]:
         """
-        Call the solar panel placement API (PLACEHOLDER)
+        Call the solar panel placement API
 
         Args:
             image_path: Path to the roof image
@@ -227,71 +210,44 @@ class PanelPlacementService:
             panel_count: Optional panel count
 
         Returns:
-            Dict with panel placement data or None if failed
+            Dict with panel placement data
+            
+        Raises:
+            Exception: If panel placement service fails
         """
-        try:
-            # Try calling the actual Python panel placement service
-            panel_placement_url = f"{settings.PY_SERVICE_URL}/place_panels"
-            
-            result = await self.call_actual_api(
-                image_path,
-                usable_area_result,
-                panel,
-                lat,
-                lon,
-                roof_azimuth,
-                roof_tilt,
-                annual_irradiance,
-                panel_placement_url,
-                panel_spacing,
-                panel_count,
-            )
-            
-            if result and result.get("success"):
-                logger.info(f"Successfully called panel placement service. Panels placed: {result.get('panels_placed')}")
-                return self._transform_placement_response(result, panel, annual_irradiance)
-            else:
-                logger.warning("Panel placement service returned unsuccessful result, using placeholder")
-                return self._get_placeholder_response(usable_area_result, panel, panel_count, annual_irradiance)
-
-        except Exception as e:
-            logger.error(f"Panel placement error: {str(e)}")
-            return self._get_placeholder_response(usable_area_result, panel, panel_count, annual_irradiance)
-    
-    def _get_placeholder_response(
-        self, 
-        usable_area_result: Dict, 
-        panel: Dict, 
-        panel_count: Optional[int], 
-        annual_irradiance: float
-    ) -> Dict:
-        """Generate placeholder response when service is unavailable"""
-        logger.warning("Using PLACEHOLDER for panel placement API")
+        # Call the Python panel placement service
+        panel_placement_url = f"{settings.PY_SERVICE_URL}/place_panels"
         
-        # Calculate estimated panel count if not provided
-        if panel_count is None:
-            usable_area_m2 = usable_area_result.get("usable_area_m2", 50.0)
-            panel_area_m2 = (panel.get("width", 1.0) * panel.get("height", 2.0))
-            panel_count = int(usable_area_m2 / panel_area_m2 * 0.8)  # 80% efficiency
-
-        return {
-            "panel_count": panel_count,
-            "panel_grid": {"rows": 5, "cols": 4, "total": panel_count},
-            "panel_positions": [
-                {"x": i * 2, "y": j * 3, "rotation": 0}
-                for i in range(4)
-                for j in range(5)
-            ],
-            "panel_grid_image": None,
-            "visualization_image": None,
-            "coverage_percentage": 80.0,
-            "estimated_annual_production_kwh": panel_count
-            * panel.get("power", 400)
-            / 1000
-            * annual_irradiance,
-            "_placeholder": True,
-        }
-    
+        result = await self.call_actual_api(
+            image_path,
+            usable_area_result,
+            panel,
+            lat,
+            lon,
+            roof_azimuth,
+            roof_tilt,
+            annual_irradiance,
+            panel_placement_url,
+            panel_spacing,
+            panel_count,
+        )
+        
+        if not result:
+            raise Exception(
+                f"Panel placement service at {settings.PY_SERVICE_URL} returned no data. "
+                "Ensure py_service is running: docker ps | grep sam-service"
+            )
+        
+        if not result.get("success"):
+            warnings = result.get("warnings", [])
+            message = result.get("message", "Unknown error")
+            raise Exception(
+                f"Panel placement failed: {message}. "
+                f"Warnings: {', '.join(warnings) if warnings else 'None'}"
+            )
+        
+        logger.info(f"Successfully called panel placement service. Panels placed: {result.get('panels_placed')}")
+        return self._transform_placement_response(result, panel, annual_irradiance)
     def _transform_placement_response(
         self, 
         result: Dict, 

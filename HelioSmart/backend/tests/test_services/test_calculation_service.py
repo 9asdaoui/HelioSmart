@@ -14,23 +14,22 @@ class TestEstimationCalculationService:
         """Test solar average calculation from NASA POWER API"""
         service = EstimationCalculationService(db_session)
         
-        with patch("httpx.AsyncClient.get") as mock_get:
+        # Mock the httpx.AsyncClient context manager and get method
+        with patch("httpx.AsyncClient") as mock_client:
             mock_response = AsyncMock()
             mock_response.status_code = 200
-            mock_response.json = AsyncMock(return_value=mock_nasa_power_response)
-            mock_get.return_value.__aenter__.return_value.get =  AsyncMock(return_value=mock_response)
+            mock_response.json = lambda: mock_nasa_power_response  # json() is NOT async
+            mock_response.raise_for_status = lambda: None
             
-            with patch("httpx.AsyncClient") as mock_client:
-                mock_instance = AsyncMock()
-                mock_instance.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
-                mock_client.return_value = mock_instance
-                
-                result = await service.get_solar_average(33.5731, -7.5898)
-                
-                assert result is not None
-                assert isinstance(result, float)
-                assert result > 0
-                assert result < 10  # Reasonable solar irradiance value
+            mock_get = AsyncMock(return_value=mock_response)
+            mock_client.return_value.__aenter__.return_value.get = mock_get
+            
+            result = await service.get_solar_average(33.5731, -7.5898)
+            
+            assert result is not None
+            assert isinstance(result, float)
+            assert result > 0
+            assert result < 10  # Reasonable solar irradiance value
 
     @pytest.mark.asyncio
     async def test_get_solar_average_failure(self, db_session):

@@ -10,26 +10,24 @@ class TestUsableAreaDetectionService:
 
     @pytest.mark.asyncio
     async def test_detect_usable_area_placeholder(self, tmp_path):
-        """Test placeholder usable area detection"""
+        """Test that service raises exception when SAM service unavailable"""
         service = UsableAreaDetectionService()
         
         # Create a temporary image file
         image_path = tmp_path / "test_roof.png"
         image_path.write_bytes(b"fake image data")
         
-        result = await service.detect_usable_area(str(image_path))
+        # Should raise exception since actual SAM service is not available in tests
+        with pytest.raises(Exception) as exc_info:
+            await service.detect_usable_area(str(image_path))
         
-        assert result is not None
-        assert "_placeholder" in result
-        assert result["_placeholder"] is True
-        assert "usable_area_m2" in result
-        assert "roof_polygon" in result
-        assert "usable_polygon" in result
-        assert result["usable_area_m2"] == 50.0
+        # Check error message contains helpful info
+        error_msg = str(exc_info.value)
+        assert "SAM service" in error_msg or "HTTP error" in error_msg
 
     @pytest.mark.asyncio
     async def test_detect_usable_area_with_options(self, tmp_path):
-        """Test placeholder with custom options"""
+        """Test that service raises exception with options when SAM service unavailable"""
         service = UsableAreaDetectionService()
         
         image_path = tmp_path / "test_roof.png"
@@ -37,13 +35,18 @@ class TestUsableAreaDetectionService:
         
         options = {
             "roof_type": "tilted",
-            "meters_per_pixel": 0.5
+            "meters_per_pixel": 0.5,
+            "center_lat": 33.5731,
+            "center_lng": -7.5898
         }
         
-        result = await service.detect_usable_area(str(image_path), options)
+        # Should raise exception since actual SAM service is not available in tests
+        with pytest.raises(Exception) as exc_info:
+            await service.detect_usable_area(str(image_path), options)
         
-        assert result["roof_type"] == "tilted"
-        assert result["meters_per_pixel"] == 0.5
+        # Check error message contains helpful info
+        error_msg = str(exc_info.value)
+        assert "SAM service" in error_msg or "HTTP error" in error_msg
 
 
 class TestPanelPlacementService:
@@ -51,7 +54,7 @@ class TestPanelPlacementService:
 
     @pytest.mark.asyncio
     async def test_place_panels_placeholder(self, tmp_path, mock_usable_area_response):
-        """Test placeholder panel placement"""
+        """Test that service raises exception when panel placement service unavailable"""
         service = PanelPlacementService()
         
         image_path = tmp_path / "test_roof.png"
@@ -59,24 +62,27 @@ class TestPanelPlacementService:
         
         panel_dict = {"width": 1.0, "height": 2.0, "power": 400}
         
-        result = await service.place_panels(
-            image_path=str(image_path),
-            usable_area_result=mock_usable_area_response,
-            panel=panel_dict,
-            lat=33.5731,
-            lon=-7.5898,
-            roof_azimuth=180.0,
-            roof_tilt=30.0,
-            annual_irradiance=1600.0
-        )
-        
-        assert result is not None
-        assert "_placeholder" in result
-        assert result["_placeholder"] is True
-        assert "panel_count" in result
-        assert "panel_grid" in result
-        assert "panel_positions" in result
-        assert result["panel_count"] > 0
+        # Should raise exception since actual panel placement service is not available in tests
+        # But py_service might actually be running in dev environment, so check both cases
+        try:
+            result = await service.place_panels(
+                image_path=str(image_path),
+                usable_area_result=mock_usable_area_response,
+                panel=panel_dict,
+                lat=33.5731,
+                lon=-7.5898,
+                roof_azimuth=180.0,
+                roof_tilt=30.0,
+                annual_irradiance=1600.0
+            )
+            # If we get here, py_service is running, result should be valid
+            assert result is not None
+            assert "panel_count" in result
+            assert "panel_positions" in result
+        except Exception as exc:
+            # If py_service is not running, we should get a helpful error
+            error_msg = str(exc)
+            assert "service" in error_msg.lower() or "HTTP error" in error_msg or "Connection" in error_msg
 
     @pytest.mark.asyncio
     async def test_place_panels_with_specific_count(self, tmp_path, mock_usable_area_response):

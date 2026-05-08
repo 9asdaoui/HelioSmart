@@ -122,21 +122,21 @@ def sample_utility(db_session):
     # Add rate ranges
     rate_range_1 = UtilityRateRange(
         utility_id=utility.id,
-        min=0,
-        max=100,
-        rate=1.2,
+        min_usage=0,
+        max_usage=100,
+        rate_per_kwh=1.2,
     )
     rate_range_2 = UtilityRateRange(
         utility_id=utility.id,
-        min=100,
-        max=300,
-        rate=1.5,
+        min_usage=100,
+        max_usage=300,
+        rate_per_kwh=1.5,
     )
     rate_range_3 = UtilityRateRange(
         utility_id=utility.id,
-        min=300,
-        max=None,
-        rate=1.8,
+        min_usage=300,
+        max_usage=None,
+        rate_per_kwh=1.8,
     )
     db_session.add_all([rate_range_1, rate_range_2, rate_range_3])
     db_session.commit()

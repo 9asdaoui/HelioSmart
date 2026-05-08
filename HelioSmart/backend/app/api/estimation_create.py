@@ -65,9 +65,9 @@ async def create_project(
     4. Calculate usage and cost  
     5. Determine system sizing
     6. Save roof image
-    7. Call usable area detection API (or placeholder)
+    7. Call usable area detection API (requires SAM service)
     8. Select best-fit panel
-    9. Call panel placement API (or placeholder)
+    9. Call panel placement API (requires py_service)
     10. Estimate mounting structure cost
     11. Select inverter combo and calculate stringing
     12. Calculate wiring requirements and BOM
@@ -184,12 +184,12 @@ async def create_project(
             usable_area_options = {k: v for k, v in usable_area_options.items() if v is not None}
 
             try:
-                # Try actual API first, falls back to placeholder on failure
+                # Call SAM service API - will raise exception if service unavailable or model not loaded
                 usable_area_result = await usable_area_service.detect_usable_area(
                     roof_image_path, usable_area_options
                 )
             except Exception as e:
-                logger.warning(f"Usable area detection failed: {str(e)}")
+                logger.error(f"Usable area detection failed: {str(e)}")
                 usable_area_result = None
 
         # ========= 10. Select best-fit panel =========
@@ -518,14 +518,9 @@ async def create_project(
 
         logger.info(f"Estimation saved successfully: id={estimation.id}")
 
-        # Prepare visualization data for frontend transparency - ALWAYS return this
-        # Even in placeholder mode, we provide map center and basic info so Step 7 can show
-        sam_mode = "placeholder"
-        if usable_area_result:
-            if usable_area_result.get("_fallback"):
-                sam_mode = "fallback"
-            elif usable_area_result.get("_sam_service"):
-                sam_mode = "production"
+        # Prepare visualization data for frontend transparency
+        # Determine if SAM service was successfully used
+        sam_mode = "production" if usable_area_result else "unavailable"
         
         visualization_data = {
             "roof_polygon": usable_area_result.get("roof_polygon") if usable_area_result else None,
@@ -590,13 +585,7 @@ async def get_visualization(estimation_id: int, db: Session = Depends(get_db)):
         sam_masks = json.loads(estimation.sam_masks) if estimation.sam_masks else None
         
         # Determine SAM mode from available data
-        sam_mode = "placeholder"
-        if roof_polygon and usable_polygon:
-            # Check if this looks like real SAM data (complex polygons) vs simple fallback
-            if len(roof_polygon) > 4:  # More than simple rectangle
-                sam_mode = "production"
-            else:
-                sam_mode = "fallback"
+        sam_mode = "production" if (roof_polygon and usable_polygon) else "unavailable"
         
         # Parse panel positions if available
         panel_positions = None

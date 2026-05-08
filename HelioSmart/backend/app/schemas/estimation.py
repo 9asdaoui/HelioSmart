@@ -1,7 +1,8 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
+import json
 
 
 class PanelInfo(BaseModel):
@@ -181,6 +182,37 @@ class EstimationResponse(EstimationBase):
     inverter_info: Optional[InverterInfo] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    
+    # Validators to handle JSON strings from PostgreSQL
+    @field_validator(
+        'monthly_usage', 'monthly_cost', 'panel_grid', 'dc_monthly', 
+        'poa_monthly', 'solrad_monthly', 'ac_monthly', 'loss_breakdown', 
+        'inverter_design', mode='before'
+    )
+    @classmethod
+    def parse_json_dict(cls, v):
+        """Parse JSON strings to dictionaries"""
+        if v is None:
+            return v
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return v
+        return v
+    
+    @field_validator('panel_positions', 'inverter_combos', 'stringing_details', mode='before')
+    @classmethod
+    def parse_json_list(cls, v):
+        """Parse JSON strings to lists"""
+        if v is None:
+            return v
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return v
+        return v
     
     class Config:
         from_attributes = True
